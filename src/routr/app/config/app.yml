@@ -1,0 +1,10 @@
+SQLALCHEMY_DATABASE_URI: 'postgresql://sharingcph:sharingcph@127.0.0.1:5432/trondheim'
+
+LOAD_SITUATION:
+  lat: 12.1
+  lon: 55.4
+  zoom: 12
+
+ZOOM_LIMITS:
+  from: 7
+  to: 12
