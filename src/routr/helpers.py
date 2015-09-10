@@ -28,7 +28,6 @@ class Config(BaseConfig):
     def from_yaml(self, root_path):
         env = os.environ.get('FLASK_ENV', 'development').upper()
         self['ENVIRONMENT'] = env.lower()
-
         for fn in ('app', 'credentials'):
             config_file = os.path.join(root_path, 'config', '%s.yml' % fn)
 
@@ -36,11 +35,11 @@ class Config(BaseConfig):
                 with open(config_file) as f:
                     c = yaml.load(f)
 
-                c = c.get(env, c)
+                cc = c.get(env, c)
 
-                for key in c.iterkeys():
+                for key in cc.keys():
                     if key.isupper():
-                        self[key] = c[key]
+                        self[key] = cc[key]
             except:
                 pass
 
