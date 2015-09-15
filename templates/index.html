@@ -1,3 +1,215 @@
-<html>
-{{ url_for('static', filename='informal-router.min.js') }}
+<!DOCTYPE html>
+<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
+<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8"> <![endif]-->
+<!--[if IE 8]>         <html class="no-js lt-ie9"> <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js"> <!--<![endif]-->
+<head>
+
+    <!-- build:css styles/vendor.css -->
+    <!-- bower:css -->
+    <link rel="stylesheet" href="../static/bower_components/leaflet-dist/leaflet.css" />
+    <link rel="stylesheet" href="../static/bower_components/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="../static/bower_components/leaflet-sidebar/src/L.Control.Sidebar.css" />
+    <link rel="stylesheet" href="../static/bower_components/leaflet-easybutton/src/easy-button.css" />
+    <link rel="stylesheet" href="../static/bower_components/leaflet-draw/dist/leaflet.draw.css" />
+    <!-- endbower -->
+    <!-- endbuild -->
+
+    <link rel="stylesheet" href="../static/dist/informal-routr.css">
+    <link rel="shortcut icon" type="image/x-icon" href="static/favicon.png" />
+
+</head>
+<body>
+
+<div id="sidebar">
+    <h2>Welcome</h2>
+
+    <div>
+        Please draw your route by clicking on the map.
+    </div>
+
+    <div>
+        Finish by double clicking or just close the window.
+    </div>
+
+    <br/>
+
+    <div>
+        <a href="http://routr.hagr.io">routr</a>.<a href="http://informal.city">informal.city</a>
+    </div>
+
+    <br/>
+
+    <div class="row"></div>
+    <div class="float-left">
+        <img src="../static/logo.png">
+    </div>
+    <div class="float-left">... is your supercool partner.</div>
+</div>
+</div>
+
+</div>
+
+<div id="map"></div>
+
+<!-- build:js scripts/vendor.js -->
+<!-- bower:js -->
+<script src="../static/bower_components/jquery/dist/jquery.js"></script>
+<script src="../static/bower_components/bootstrap/dist/js/bootstrap.js"></script>
+<script src="../static/bower_components/leaflet-dist/leaflet.js"></script>
+<script src="../static/bower_components/leaflet/dist/leaflet-src.js"></script>
+<script src="../static/bower_components/leaflet-sidebar/src/L.Control.Sidebar.js"></script>
+<script src="../static/bower_components/leaflet-easybutton/src/easy-button.js"></script>
+<script src="../static/bower_components/leaflet-draw/dist/leaflet.draw-src.js"></script>
+<!-- endbower -->
+<!-- endbuild -->
+
+
+<script src="../static/informal-routr.min.js"></script>
+
+<script>
+
+    var sidebar;
+    var informal_button;
+
+    var user_id = '{{user_id}}';
+
+    jQuery.get('/cfg/' + user_id, function(data, status) {
+
+        var map = loadMap(data.config, data.geom);
+
+        sidebar = loadSidebar(map);
+
+        informal_button = loadInformal(map);
+
+        loadDrawingSidebar(map);
+
+        map.options.zoom = 16;
+        map.options.maxZoom = 16;
+        map.options.minZoom = 14;
+
+    });
+
+    function loadDrawingSidebar(map) {
+        map.addControl(new L.Control.Draw({
+            edit: { featureGroup: drawnItems },
+            draw: {
+                marker: false,
+                polygon: false,
+                rectangle:false,
+                circle:false,
+                polyline: {
+                    shapeOptions: {
+                        color: '#f357a1',
+                        weight: 10
+                    }
+                }
+            }}));
+    }
+
+    //        var helloPopup = L.popup().setContent('Hello World!');
+
+    function loadInformal(map) {
+
+        var b = L.easyButton(
+                '<div class="informal-city-icon">&nbsp;</div>',
+                function(btn, map) {
+                    sidebar.show();
+                }).addTo( map );
+
+        $('.easy-button-container').hide();
+    }
+
+    function saveRoute(polyLine) {
+
+        var coordinate_sequence = [];
+
+        for (var cid in polyLine) {
+
+            coordinate_sequence.push(
+                    {
+                        'lat': polyLine[cid].lat,
+                        'lng': polyLine[cid].lng
+                    }
+            )
+        }
+
+        $.ajax({
+            type: "POST",
+            contentType: "application/json; charset=utf-8",
+            url: "save_route",
+            data: JSON.stringify({
+                'polyline': coordinate_sequence,
+                'user_id': user_id}),
+            success: function (data) {
+                console.log(data);
+            },
+            dataType: "json"
+        });
+    }
+
+    function loadSidebar(map, sidebar) {
+
+        sidebar = L.control.sidebar('sidebar', {
+            position: 'left'
+        });
+
+        map.addControl(sidebar);
+
+        sidebar.show();
+
+        sidebar.on('hide', function () {
+            $('.easy-button-container').fadeIn();
+        });
+
+        sidebar.on('show', function () {
+            $('.easy-button-container').fadeOut();
+        });
+
+        return sidebar;
+//        $('.leaflet-draw-draw-polyline')[0].click(null);
+
+    }
+
+    function loadMap(cfg, pl) {
+
+        var layer = "a";
+
+        var osmUrl = 'http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                osmAttrib = '&copy; <a href="http://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                osm = L.tileLayer(osmUrl, {maxZoom: 18, attribution: osmAttrib});
+
+        map = new L.Map('map',
+                {
+                    layers: [osm],
+                    center: new L.LatLng(cfg.lat, cfg.lng), zoom: 13
+                }),
+                drawnItems = L.featureGroup().addTo(map);
+
+
+        map.on('draw:created', function(event) {
+            console.log(layer);
+            layer = event.layer;
+            drawnItems.addLayer(layer);
+            saveRoute(layer.getLatLngs());
+            // TODO: thank you overlay
+
+        });
+
+        map.on('mousedown', function(event) {
+            var layer = event.layer;
+            // console.log(map);
+            // saveRoute(layer);
+        });
+
+        map.on("zoomend", function(event) {
+            console.log(map.getZoom());
+        });
+
+        return map;
+
+    }
+</script>
+
+</body>
 </html>

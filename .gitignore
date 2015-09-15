@@ -1,4 +1,6 @@
 /shapely
+/node_modules
+/.tmp
 .idea
 .Python
 bin
