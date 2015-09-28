@@ -31,11 +31,16 @@
   "dependencies": {
     "jquery": null,
     "bootstrap": null,
+    "showdown": "#~1.2.3",
     "leaflet-dist": "0.7.x",
     "leaflet-sidebar": "#0.1.8",
     "leaflet-easybutton": "CliffCloud/Leaflet.EasyButton",
-    "leaflet-draw": "Leaflet/Leaflet.draw"
+    "leaflet-draw": "Leaflet/Leaflet.draw",
+    "leaflet-search": "1.8.4",
+    "leaflet-plugins": "shramov/leaflet-plugins",
+    "leaflet.editable":"yohanboniface/Leaflet.Editable"
   },
+
   "devDependencies": {
     "leaflet": "~0.7.0",
     "jshint": "~2.3.0",

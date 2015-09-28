@@ -1,0 +1,17 @@
+SQLALCHEMY_DATABASE_URI: 'postgresql://sharingcph:sharingcph@127.0.0.1:5432/trondheim'
+
+DEVELOPMENT: true
+
+LOAD_SITUATION: &load_situation
+  lat: 10.393333
+  lon: 63.429722
+  zoom: 12
+
+ZOOM_LIMITS: &zoom_limits
+  from: 7
+  to: 12
+
+DATA_RETRIEVAL_PWD: "blabla"
+
+QGIS: &qgis
+  server_address: "http://www.dr.dk/data"

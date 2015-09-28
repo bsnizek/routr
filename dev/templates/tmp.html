@@ -1,0 +1,114 @@
+
+    var sidebar;
+    var informal_button;
+    var user_id = '{{user_id}}';
+    var draw;
+
+    var drawnItems = new L.FeatureGroup();
+
+    jQuery.get('/cfg/' + user_id, function(data, status) {
+
+
+
+//        var map = loadMap(data.config, data.geom);
+
+//        sidebar = loadSidebar(map);
+//
+//        addSearch(map);
+//
+//        loadDrawingSidebar(map);
+//
+//        informal_button = loadInformal(map);
+//
+//        map.options.zoom = 16;
+//        map.options.maxZoom = 16;
+//        map.options.minZoom = 14;
+
+//        $('.leaflet-draw-draw-polyline')[0].click(null);
+
+    });
+
+    function loadDrawingSidebar(map) {
+
+        // Initialise the FeatureGroup to store editable layers
+        var drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+
+// Initialise the draw control and pass it the FeatureGroup of editable layers
+        var drawControl = new L.Control.Draw({
+            edit: {
+                featureGroup: drawnItems
+            }
+        });
+        map.addControl(drawControl);
+
+        // Initialise the FeatureGroup to store editable layers
+
+//        var drawnItems = new L.FeatureGroup();
+//        map.addLayer(drawnItems);
+//
+//        draw = map.addControl(new L.Control.Draw({
+//            edit: {
+//                featureGroup: drawnItems },
+//            draw: {
+//                marker: false,
+//                polygon: false,
+//                rectangle:false,
+//                circle:false,
+//                polyline: {
+//                    shapeOptions: {
+//                        color: '#f357a1',
+//                        weight: 10
+//                    }
+//                }
+//            }}));
+
+
+
+    }
+
+    //        var helloPopup = L.popup().setContent('Hello World!');
+
+
+
+
+    function loadSidebar(map, sidebar) {
+
+        sidebar = L.control.sidebar('sidebar', {
+            position: 'left'
+        });
+
+        map.addControl(sidebar);
+
+        sidebar.show();
+
+        sidebar.on('hide', function () {
+            $('.easy-button-container').fadeIn();
+        });
+
+        sidebar.on('show', function () {
+            $('.easy-button-container').fadeOut();
+        });
+
+        return sidebar;
+
+    }
+
+    function loadMap(cfg, pl) {
+
+//        var osmUrl = 'http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+//                osmAttrib = '&copy; <a href="http://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+//                osm = L.tileLayer(osmUrl, {maxZoom: 18, attribution: osmAttrib});
+//
+//        map = new L.Map('map',
+//                {{drawControl: true},
+//                    layers: [osm],
+//                    center: new L.LatLng(cfg.lat, cfg.lng), zoom: 13
+//                }),
+//                drawnItems = L.featureGroup().addTo(map);
+//
+//
+//
+//        return map;
+
+    }

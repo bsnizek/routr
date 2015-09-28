@@ -4,7 +4,7 @@ from geoalchemy2 import Geometry, WKTElement
 from geoalchemy2.shape import to_shape
 
 from routr.app import db
-from shapely.geometry import mapping
+from shapely.geometry import mapping, LineString
 
 __author__ = 'besn'
 
@@ -39,19 +39,30 @@ class Route(db.Model):
         return route
 
     @staticmethod
-    def get_rout_by_user_id(d_b, user_id):
-        return d_b.session.query(Route).filter_by(user_id=user_id).first()
+    def all(d_b):
+        return d_b.session.query(Route)
+
+    @staticmethod
+    def get_route_by_user_id(d_b, user_id):
+        return d_b.session.query(Route).filter_by(user_id = user_id).first()
+
+    @staticmethod
+    def get_route_by_guid(d_b, guid):
+        return d_b.session.query(Route).filter_by(guid = guid).first()
 
     @staticmethod
     def update_geometry(d_b, user_id, geom):
 
         wkt = WKTElement(geom.wkt, srid=4326)
 
-        route = Route.get_rout_by_user_id(d_b, user_id)
+        route = Route.get_route_by_user_id(d_b, user_id)
 
         if route:
             route.geom = wkt
-            route.n_saves = route.n_saves + 1
+            if route.n_saves:
+                route.n_saves = route.n_saves + 1
+            else:
+                route.n_saves = 1
             d_b.session.commit()
         else:
             route = Route.create(d_b, user_id)
@@ -66,4 +77,32 @@ class Route(db.Model):
                 'geom':self.geom}
 
     def geo(self):
+        """
+        :return: The geoJSON of the object.
+        {'coordinates': (
+        (51.83577752045248, 0.0),
+        (44.08758502824518, 11.42578125),
+        (58.72259882804337, 20.56640625),
+        (43.32517767999296, 13.359375)),
+        'type': 'LineString'}
+        """
         return mapping(to_shape(self.geom))
+
+    def get_geometry(self):
+        """
+        :return: The Shapely geometry object.
+        """
+        return to_shape(self.geom)
+
+    @staticmethod
+    def get_bounds(d_b):
+        """
+        Returns the boundary for the whole table i.e. all its objects.
+        :param d_b:
+        :return:
+        """
+        routes = Route.all(d_b)
+        coords = []
+        for route in routes:
+            coords = coords + list(route.get_geometry().coords)
+        return LineString(coords).bounds

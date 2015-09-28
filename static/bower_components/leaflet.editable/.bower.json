@@ -1,0 +1,31 @@
+{
+  "name": "leaflet.editable",
+  "version": "0.6.2",
+  "homepage": "https://github.com/yohanboniface/Leaflet.Editable",
+  "authors": [
+    "Yohan Boniface <yb@enix.org>"
+  ],
+  "description": "Make geometries editable in Leaflet.",
+  "main": "src/Leaflet.Editable.js",
+  "keywords": [
+    "leaflet"
+  ],
+  "license": "WTFPL",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests",
+    "example"
+  ],
+  "_release": "0.6.2",
+  "_resolution": {
+    "type": "version",
+    "tag": "0.6.2",
+    "commit": "02c662b21099f3e09cef2e2efcb01b2439d7046a"
+  },
+  "_source": "git://github.com/yohanboniface/Leaflet.Editable.git",
+  "_target": "*",
+  "_originalSource": "yohanboniface/Leaflet.Editable"
+}

@@ -5680,6 +5680,3533 @@ function buildIcon(ambiguousIconString) {
 
 })();
 
+L.Control.Distance = L.Control.extend({
+	options: {
+		position: 'topleft',
+		popups: true
+	},
+
+	initialize: function (options) {
+		L.Util.setOptions(this, options);
+		this._line = new L.Polyline([], {editable: true});
+		this._line.on('edit', this._update, this);
+		this._line.on('click', function(e) {});
+		this._active = false;
+	},
+
+	getLine: function() { return this._line; },
+
+	onAdd: function(map) {
+		var className = 'leaflet-control-distance',
+		    container = this._container = L.DomUtil.create('div', className);
+
+		function cb() {
+			if (this._active)
+				this._calc_disable();
+			else
+				this._calc_enable();
+		}
+
+		var link = this._link = this._createButton('Edit', 'leaflet-control-distance leaflet-control-distance-edit', container, cb, this);
+		var del = this._link_delete = this._createButton('Delete', 'leaflet-control-distance leaflet-control-distance-delete', container, this._reset, this);
+		var text = this._text = L.DomUtil.create('div', 'leaflet-control-distance-text', container);
+
+		//text.style.display = 'inline';
+		//text.style.float = 'right';
+
+		this._map.addLayer(this._line);
+		this._calc_disable();
+		return container;
+	},
+
+	_createButton: function (title, className, container, fn, context) {
+		var link = L.DomUtil.create('a', className, container);
+		link.href = '#';
+		link.title = title;
+
+		L.DomEvent
+			.addListener(link, 'click', L.DomEvent.stopPropagation)
+			.addListener(link, 'click', L.DomEvent.preventDefault)
+			.addListener(link, 'click', fn, context);
+
+		return link;
+	},
+
+	onRemove: function(map) {
+		this._calc_disable();
+	},
+	
+	_calc_enable: function() {
+		this._map.on('click', this._add_point, this);
+
+		this._map.getContainer().style.cursor = 'crosshair';
+		//this._map.addLayer(this._line);
+		L.DomUtil.addClass(this._link, 'leaflet-control-distance-active');
+		this._container.appendChild(this._link_delete);
+		this._container.appendChild(this._text);
+		this._active = true;
+		this._line.editing.enable();
+		if (!this._map.hasLayer(this._line))
+			this._map.addLayer(this._line);
+		this._update();
+	},
+
+	_calc_disable: function() {
+		this._map.off('click', this._add_point, this);
+		//this._map.removeLayer(this._line);
+		this._map.getContainer().style.cursor = 'default';
+		this._container.removeChild(this._link_delete);
+		this._container.removeChild(this._text);
+		L.DomUtil.removeClass(this._link, 'leaflet-control-distance-active');
+		this._active = false;
+		this._line.editing.disable();
+	},
+
+	_add_point: function (e) {
+		var len = this._line.getLatLngs().length;
+		this._line.addLatLng(e.latlng);
+		this._line.editing.updateMarkers();
+		this._line.fire('edit', {});
+	},
+
+	_reset: function(e) {
+		this._line.setLatLngs([]);
+		this._line.fire('edit', {});
+		this._line.redraw();
+		this._line.editing.updateMarkers();
+	},
+
+	_update: function(e) {
+		this._text.textContent = this._d2txt(this._distance_calc());
+	},
+
+	_d2txt: function(d) {
+		if (d < 2000)
+			return d.toFixed(0) + ' m';
+		else
+			return (d/1000).toFixed(1) + ' km';
+	},
+
+	_distance_calc: function(e) {
+		var ll = this._line.getLatLngs();
+		var d = 0, p = null;
+		for (var i = 0; i < ll.length; i++) {
+			if (i)
+				d += p.distanceTo(ll[i]);
+			if (this.options.popups) {
+				var m = this._line.editing._markers[i];
+				if (m) {
+					m.bindPopup(this._d2txt(d));
+					m.on('mouseover', m.openPopup, m);
+					m.on('mouseout', m.closePopup, m);
+				}
+				}
+			p = ll[i];
+		}
+		return d;
+	}
+});
+
+/*
+ * Add async initialization of layers to L.Control.Layers
+ */
+L.Control.Layers.include({
+	_loadScripts: function(scripts, cb, args) {
+		if (!scripts || scripts.length === 0)
+			return cb(args);
+		var _this = this, s = scripts.pop(), c;
+		c = L.Control.Layers._script_cache[s];
+		if (c === undefined) {
+			c = {url: s, wait: []};
+			var script = document.createElement('script');
+			script.src = s;
+			script.type = 'text/javascript';
+			script.onload = function () {
+				var i = 0;
+				for (i = 0; i < c.wait.length; i++)
+					c.wait[i]();
+			};
+			c.e = script;
+			document.getElementsByTagName('head')[0].appendChild(script);
+		}
+		function _cb() { _this._loadScripts(scripts, cb, args); }
+		c.wait.push(_cb);
+		if (c.e.readyState === 'completed')
+			_cb();
+		L.Control.Layers._script_cache[s] = c;
+	},
+
+	addLayerDef: function(name, def) {
+		if (this._layer_defs === undefined)
+			this._layer_defs = {};
+		this._layer_defs[name] = def;
+	},
+
+	addLayerDefs: function(defs) {
+		if (this._layer_defs === undefined)
+			this._layer_defs = {};
+		L.Util.extend(this._layer_defs, defs);
+	},
+
+	loadLayer: function(name, deflt) {
+		var _this = this, l = this._layer_defs[name];
+		l['default'] = deflt;
+		this._loadScripts(l.js.reverse(), function(l) {_this._loadLayer(l);}, l);
+	},
+
+	_loadLayer: function(l) {
+		var x = l.init();
+		if (l['default'] && this._map)
+			this._map.addLayer(x);
+		if (!l.overlay)
+			this.addBaseLayer(x, l.name);
+		else
+			this.addOverlay(x, l.name);
+	}
+});
+
+L.Control.Layers._script_cache = {};
+
+L.Control.Permalink = L.Control.extend({
+	includes: L.Mixin.Events, 
+
+	options: {
+		position: 'bottomleft',
+		useAnchor: true,
+		useLocation: false,
+		text: 'Permalink'
+	},
+
+	initialize: function(options) {
+		L.Util.setOptions(this, options);
+		this._params = {};
+		this._set_urlvars();
+		this.on('update', this._set_center, this);
+		for (var i in this) {
+			if (typeof(i) === 'string' && i.indexOf('initialize_') === 0)
+				this[i]();
+		}
+	},
+
+	onAdd: function(map) {
+		this._container = L.DomUtil.create('div', 'leaflet-control-attribution leaflet-control-permalink');
+		L.DomEvent.disableClickPropagation(this._container);
+		this._map = map;
+		this._href = L.DomUtil.create('a', null, this._container);
+		this._href.innerHTML = this.options.text;
+
+		map.on('moveend', this._update_center, this);
+		this.fire('update', {params: this._params});
+		this._update_center();
+
+		if (this.options.useAnchor && 'onhashchange' in window) {
+			var _this = this, fn = window.onhashchange;
+			window.onhashchange = function() {
+				_this._set_urlvars();
+				if (fn) return fn();
+			};
+		}
+
+		this.fire('add', {map: map});
+
+		return this._container;
+	},
+
+	_update_center: function() {
+		if (!this._map) return;
+
+		var center = this._round_point(this._map.getCenter());
+		this._update({zoom: String(this._map.getZoom()), lat: String(center.lat), lon: String(center.lng)});
+	},
+
+	_update_href: function() {
+		var params = L.Util.getParamString(this._params);
+		var sep = '?';
+		if (this.options.useAnchor) sep = '#';
+		var url = this._url_base + sep + params.slice(1);
+		if (this._href) this._href.setAttribute('href', url);
+		if (this.options.useLocation)
+			location.replace('#' + params.slice(1));
+		return url;
+	},
+
+	_round_point : function(point) {
+		var bounds = this._map.getBounds(), size = this._map.getSize();
+		var ne = bounds.getNorthEast(), sw = bounds.getSouthWest();
+
+		var round = function (x, p) {
+			if (p === 0) return x;
+			var shift = 1;
+			while (p < 1 && p > -1) {
+				x *= 10;
+				p *= 10;
+				shift *= 10;
+			}
+			return Math.floor(x)/shift;
+		};
+		point.lat = round(point.lat, (ne.lat - sw.lat) / size.y);
+		point.lng = round(point.lng, (ne.lng - sw.lng) / size.x);
+		return point;
+	},
+
+	_update: function(obj, source) {
+		for(var i in obj) {
+			if (!obj.hasOwnProperty(i)) continue;
+			if (obj[i] !== null && obj[i] !== undefined)
+				this._params[i] = obj[i];
+			else
+				delete this._params[i];
+		}
+
+		this._update_href();
+	},
+
+	_set_urlvars: function()
+	{
+		this._url_base = window.location.href.split('#')[0].split('?')[0];
+
+		var p;
+		if (this.options.useAnchor)
+			p = L.UrlUtil.queryParse(L.UrlUtil.hash());
+		else
+			p = L.UrlUtil.queryParse(L.UrlUtil.query());
+		
+		function eq(x, y) {
+			for(var i in x)
+				if (x.hasOwnProperty(i) && x[i] !== y[i])
+					return false;
+			return true;
+		}
+			
+		if (eq(p, this._params) && eq(this._params, p))
+			return;
+		this._params = p;
+		this._update_href();
+		this.fire('update', {params: this._params});
+	},
+
+	_set_center: function(e)
+	{
+		var params = e.params;
+		if (params.zoom === undefined ||
+		    params.lat === undefined ||
+		    params.lon === undefined) return;
+		this._map.setView(new L.LatLng(params.lat, params.lon), params.zoom);
+	}
+});
+
+L.UrlUtil = {
+	queryParse: function(s) {
+		var p = {};
+		var sep = '&';
+		if (s.search('&amp;') !== -1)
+			sep = '&amp;';
+		var params = s.split(sep);
+		for(var i = 0; i < params.length; i++) {
+			var tmp = params[i].split('=');
+			if (tmp.length !== 2) continue;
+			p[tmp[0]] = decodeURI(tmp[1]);
+		}
+		return p;
+	},
+
+	query: function() {
+		var href = window.location.href.split('#')[0], idx = href.indexOf('?');
+		if (idx < 0)
+			return '';
+		return href.slice(idx+1);
+	},
+
+	hash: function() { return window.location.hash.slice(1); },
+
+	updateParamString: function (q, obj) {
+		var p = L.UrlUtil.queryParse(q);
+		for (var i in obj) {
+			if (obj.hasOwnProperty(i))
+				p[i] = obj[i];
+		}
+		return L.Util.getParamString(p).slice(1);
+	}
+};
+
+//#include "Permalink.js
+
+L.Control.Permalink.include({
+	/*
+	options: {
+		useMarker: true,
+		markerOptions: {}
+	},
+	*/
+
+	initialize_layer: function() {
+		this.on('update', this._set_layer, this);
+		this.on('add', this._onadd_layer, this);
+	},
+
+	_onadd_layer: function(e) {
+		this._map.on('layeradd', this._update_layer, this);
+		this._map.on('layerremove', this._update_layer, this);
+		this._update_layer();
+	},
+
+	_update_layer: function() {
+		if (!this.options.layers) return;
+		var layer = this.options.layers.currentBaseLayer();
+		if (layer)
+			this._update({layer: layer.name});
+	},
+
+	_set_layer: function(e) {
+		var p = e.params;
+		if (!this.options.layers || !p.layer) return;
+		this.options.layers.chooseBaseLayer(p.layer);
+	}
+});
+
+L.Control.Layers.include({
+	chooseBaseLayer: function(name) {
+		var layer, obj;
+		for (var i in this._layers) {
+			if (!this._layers.hasOwnProperty(i))
+				continue;
+			obj = this._layers[i];
+			if (!obj.overlay && obj.name === name)
+				layer = obj.layer;
+		}
+		if (!layer || this._map.hasLayer(layer))
+			return;
+
+		for (var j in this._layers) {
+			if (!this._layers.hasOwnProperty(j))
+				continue;
+			obj = this._layers[j];
+			if (!obj.overlay && this._map.hasLayer(obj.layer))
+				this._map.removeLayer(obj.layer);
+		}
+		this._map.addLayer(layer);
+		this._update();
+	},
+
+	currentBaseLayer: function() {
+		for (var i in this._layers) {
+			if (!this._layers.hasOwnProperty(i))
+				continue;
+			var obj = this._layers[i];
+			if (obj.overlay) continue;
+			if (!obj.overlay && this._map.hasLayer(obj.layer))
+				return obj;
+		}
+	}
+});
+
+
+//#include "Permalink.js
+
+L.Control.Permalink.include({
+	/*
+	options: {
+		line: null
+	},
+	*/
+
+	initialize_line: function() {
+		this.on('update', this._set_line, this);
+		this.on('add', this._onadd_line, this);
+	},
+
+	_onadd_line: function(e) {
+		if (!this.options.line) return;
+		this.options.line.on('edit', this._update_line, this);
+		this._update_line();
+	},
+
+	_update_line: function() {
+		if (!this.options.line) return;
+		var line = this.options.line;
+		if (!line) return;
+		var text = [], coords = line.getLatLngs();
+		if (!coords.length)
+			return this._update({line: null});
+		for (var i in coords)
+			text.push(coords[i].lat.toFixed(4) + ',' + coords[i].lng.toFixed(4));
+		this._update({line: text.join(';')});
+	},
+
+	_set_line: function(e) {
+		var p = e.params, l = this.options.line;
+		if (!l || !p.line) return;
+		var coords = [], text = p.line.split(';');
+		for (var i in text) {
+			var ll = text[i].split(',');
+			if (ll.length !== 2) continue;
+			coords.push(new L.LatLng(ll[0], ll[1]));
+		}
+		if (!coords.length) return;
+		l.setLatLngs(coords);
+		if (!this._map.hasLayer(l))
+			this._map.addLayer(l);
+	}
+});
+
+//#include "Permalink.js
+
+L.Control.Permalink.include({
+	/*
+	options: {
+		useMarker: true,
+		markerOptions: {}
+	},
+	*/
+
+	initialize_marker: function() {
+		this.on('update', this._set_marker, this);
+	},
+
+	_set_marker: function(e) {
+		var p = e.params;
+		//if (!this.options.useMarker) return;
+		if (this._marker) return;
+		if (p.marker !== 1) return;
+		if (p.mlat !== undefined && p.mlon !== undefined)
+			return this._update({mlat: null, mlon: null,
+					lat: p.mlat, lon: p.mlon, marker: 1});
+		this._marker = new L.Marker(new L.LatLng(p.lat, p.lon),
+						this.options.markerOptions);
+		this._marker.bindPopup('<a href="' + this._update_href() + '">' + this.options.text + '</a>');
+		this._map.addLayer(this._marker);
+		this._update({marker: null});
+	}
+});
+
+L.Icon.Canvas = L.Icon.extend({
+	options: {
+		iconSize: new L.Point(20, 20), // Have to be supplied
+		/*
+		iconAnchor: (Point)
+		popupAnchor: (Point)
+		*/
+		className: 'leaflet-canvas-icon'
+	},
+
+	createIcon: function () {
+		var e = document.createElement('canvas');
+		this._setIconStyles(e, 'icon');
+		var s = this.options.iconSize;
+		e.width = s.x;
+		e.height = s.y;
+		this.draw(e.getContext('2d'), s.x, s.y);
+		return e;
+	},
+
+	createShadow: function () {
+		return null;
+	},
+
+	draw: function(canvas, width, height) {
+	}
+});
+
+L.DeferredLayer = L.LayerGroup.extend({
+	options: {
+		js: [],
+		init: null
+	},
+
+	_script_cache: {},
+
+	initialize: function(options) {
+		L.Util.setOptions(this, options);
+		L.LayerGroup.prototype.initialize.apply(this);
+		this._loaded = false;
+	},
+
+	onAdd: function(map) {
+		L.LayerGroup.prototype.onAdd.apply(this, [map]);
+		if (this._loaded) return;
+		var loaded = function() {
+			this._loaded = true;
+			var l = this.options.init();
+			if (l)
+				this.addLayer(l);
+		};
+		this._loadScripts(this.options.js.reverse(), L.Util.bind(loaded, this));
+	},
+
+	_loadScripts: function(scripts, cb, args) {
+		if (!scripts || scripts.length === 0)
+			return cb(args);
+		var _this = this, s = scripts.pop(), c;
+		c = this._script_cache[s];
+		if (c === undefined) {
+			c = {url: s, wait: []};
+			var script = document.createElement('script');
+			script.src = s;
+			script.type = 'text/javascript';
+			script.onload = function () {
+				c.e.readyState = 'completed';
+				var i = 0;
+				for (i = 0; i < c.wait.length; i++)
+					c.wait[i]();
+			};
+			c.e = script;
+			document.getElementsByTagName('head')[0].appendChild(script);
+		}
+		function _cb() { _this._loadScripts(scripts, cb, args); }
+		c.wait.push(_cb);
+		if (c.e.readyState === 'completed')
+			_cb();
+		this._script_cache[s] = c;
+	}
+});
+
+/*
+ * Based on comments by @runanet and @coomsie 
+ * https://github.com/CloudMade/Leaflet/issues/386
+ *
+ * Wrapping function is needed to preserve L.Marker.update function
+ */
+(function () {
+	var _old__setPos = L.Marker.prototype._setPos;
+	L.Marker.include({
+		_updateImg: function(i, a, s) {
+			a = L.point(s).divideBy(2)._subtract(L.point(a));
+			var transform = '';
+			transform += ' translate(' + -a.x + 'px, ' + -a.y + 'px)';
+			transform += ' rotate(' + this.options.iconAngle + 'deg)';
+			transform += ' translate(' + a.x + 'px, ' + a.y + 'px)';
+			i.style[L.DomUtil.TRANSFORM] += transform;
+		},
+
+		setIconAngle: function (iconAngle) {
+			this.options.iconAngle = iconAngle;
+			if (this._map)
+				this.update();
+		},
+
+		_setPos: function (pos) {
+			if (this._icon)
+				this._icon.style[L.DomUtil.TRANSFORM] = '';
+			if (this._shadow)
+				this._shadow.style[L.DomUtil.TRANSFORM] = '';
+
+			_old__setPos.apply(this,[pos]);
+
+			if (this.options.iconAngle) {
+				var defaultIcon = new L.Icon.Default;
+				var a = this.options.icon.options.iconAnchor || defaultIcon.options.iconAnchor;
+				var s = this.options.icon.options.iconSize || defaultIcon.options.iconSize;
+				var i;
+				if (this._icon) {
+					i = this._icon;
+					this._updateImg(i, a, s);
+				}
+				if (this._shadow) {
+					if (this.options.icon.options.shadowAnchor)
+						a = this.options.icon.options.shadowAnchor;
+					s = this.options.icon.options.shadowSize;
+					i = this._shadow;
+					this._updateImg(i, a, s);
+				}
+			}
+		}
+	});
+}());
+
+L.Icon.Text = L.Icon.extend({
+	initialize: function (text, options) {
+		this._text = text;
+		L.Icon.prototype.initialize.apply(this, [options]);
+	},
+
+	createIcon: function() {
+		var el = document.createElement('div');
+		el.appendChild(document.createTextNode(this._text));
+		this._setIconStyles(el, 'icon');
+		el.style.textShadow = '2px 2px 2px #fff';
+		return el;
+	},
+
+	createShadow: function() { return null; }
+
+});
+
+L.Marker.Text = L.Marker.extend({
+	initialize: function (latlng, text, options) {
+        	L.Marker.prototype.initialize.apply(this, [latlng, options]);
+		this._fakeicon = new L.Icon.Text(text);
+	},
+
+	_initIcon: function() {
+        	L.Marker.prototype._initIcon.apply(this);
+
+		var i = this._icon, s = this._shadow, obj = this.options.icon;
+		this._icon = this._shadow = null;
+
+		this.options.icon = this._fakeicon;
+        	L.Marker.prototype._initIcon.apply(this);
+		this.options.icon = obj;
+
+		if (s) {
+			s.parentNode.removeChild(s);
+			this._icon.appendChild(s);
+		}
+		
+		i.parentNode.removeChild(i);
+		this._icon.appendChild(i);
+
+		var w = this._icon.clientWidth, h = this._icon.clientHeight;
+		this._icon.style.marginLeft = -w / 2 + 'px';
+		//this._icon.style.backgroundColor = "red";
+		var off = new L.Point(w/2, 0);
+		if (L.Browser.webkit) off.y = -h;
+		L.DomUtil.setPosition(i, off);
+		if (s) L.DomUtil.setPosition(s, off);
+	}
+});
+
+/* global alert: true */
+L.OpenStreetBugs = L.FeatureGroup.extend({
+	options : {
+		serverURL : 'http://openstreetbugs.schokokeks.org/api/0.1/',
+		readonly : false,
+		setCookie : true,
+		username : 'NoName',
+		cookieLifetime : 1000,
+		cookiePath : null,
+		permalinkZoom : 14,
+		permalinkUrl: null,
+		opacity : 0.7,
+		showOpen: true,
+		showClosed: true,
+		iconOpen: 'http://openstreetbugs.schokokeks.org/client/open_bug_marker.png',
+		iconClosed:'http://openstreetbugs.schokokeks.org/client/closed_bug_marker.png',
+		iconActive: undefined,
+		editArea: 0.01,
+		popupOptions: {autoPan: false},
+		dblClick: true
+	},
+
+	initialize : function(options)
+	{
+		var tmp = L.Util.extend({}, this.options.popupOptions, (options || {}).popupOptions);
+		L.Util.setOptions(this, options);
+		this.options.popupOptions = tmp;
+
+		putAJAXMarker.layers.push(this);
+
+		this.bugs = {};
+		this._layers = {};
+
+		var username = this.get_cookie('osbUsername');
+		if (username)
+			this.options.username = username;
+
+		L.OpenStreetBugs.setCSS();
+	},
+
+	onAdd : function(map)
+	{
+		L.FeatureGroup.prototype.onAdd.apply(this, [map]);
+
+		this._map.on('moveend', this.loadBugs, this);
+		this.loadBugs();
+		if (!this.options.readonly) {
+		  if (this.options.dblClick) {
+			  map.doubleClickZoom.disable();
+			  map.on('dblclick', this.addBug, this);
+		  }
+		  else {
+			  map.on('click', this.addBug, this);
+			}
+		}
+		this.fire('add');
+	},
+
+	onRemove : function(map)
+	{
+		this._map.off('moveend', this.loadBugs, this);
+		this._iterateLayers(map.removeLayer, map);
+		delete this._map;
+		if (!this.options.readonly) {
+		  if (this.options.dblClick) {
+			  map.doubleClickZoom.enable();
+			  map.off('dblclick', this.addBug, this);
+		  }
+		  else {
+		    map.off('click', this.addBug, this);
+			}
+		}
+		this.fire('remove');
+	},
+
+	set_cookie : function(name, value)
+	{
+		var expires = (new Date((new Date()).getTime() + 604800000)).toGMTString(); // one week from now
+		document.cookie = name+'='+encodeURIComponent(value)+';';
+	},
+
+	get_cookie : function(name)
+	{
+		var cookies = (document.cookie || '').split(/;\s*/);
+		for(var i=0; i<cookies.length; i++)
+		{
+			var cookie = cookies[i].split('=');
+			if(cookie[0] === name)
+				return decodeURIComponent(cookie[1]);
+		}
+		return null;
+	},
+
+	loadBugs : function()
+	{
+		//if(!this.getVisibility())
+		//	return true;
+
+		var bounds = this._map.getBounds();
+		if(!bounds) return false;
+		var sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
+
+		function round(number, digits) {
+			var factor = Math.pow(10, digits);
+			return Math.round(number*factor)/factor;
+		}
+
+		this.apiRequest('getBugs'
+			+ '?t='+round(ne.lat, 5)
+			+ '&r='+round(ne.lng, 5)
+			+ '&b='+round(sw.lat, 5)
+			+ '&l='+round(sw.lng, 5));
+	},
+
+	apiRequest : function(url, reload)
+	{
+		var script = document.createElement('script');
+		script.type = 'text/javascript';
+		script.src = this.options.serverURL + url + '&nocache='+(new Date()).getTime();
+		var _this = this;
+		script.onload = function(e) {
+			document.body.removeChild(this);
+			if (reload) _this.loadBugs();
+		};
+		document.body.appendChild(script);
+	},
+
+	createMarker: function(id, force)
+	{
+		var bug = putAJAXMarker.bugs[id];
+		if(this.bugs[id])
+		{
+			if (force || this.bugs[id].osb.closed !== bug[2])
+				this.removeLayer(this.bugs[id]);
+			else
+				return;
+		}
+
+		var closed = bug[2];
+
+		if (closed && !this.options.showClosed) return;
+		if (!closed && !this.options.showOpen) return;
+
+		var icon_url = null;
+		var class_popup = ' osb';
+		if (bug[2]) {
+			icon_url = this.options.iconClosed;
+			class_popup += ' osbClosed';
+		}
+		else if (bug[1].length === 1) {
+			icon_url = this.options.iconOpen;
+			class_popup += ' osbOpen';
+		}
+		else {
+		  if (this.options.iconActive) {
+		    icon_url = this.options.iconActive;
+		    class_popup += ' osbActive';
+		  }
+		  else {
+		    icon_url = this.options.iconOpen;
+		    class_popup += ' osbOpen';
+		  }
+		}
+		var feature = new L.Marker(bug[0], {icon:new this.osbIcon({iconUrl: icon_url})});
+		feature.osb = {id: id, closed: closed};
+		this.addLayer(feature);
+		this.bugs[id] = feature;
+		this.setPopupContent(id);
+		feature._popup.options.className += class_popup;
+
+		if (this.options.bugid && (parseInt(this.options.bugid) === id))
+			feature.openPopup();
+
+		//this.events.triggerEvent('markerAdded');
+	},
+
+	osbIcon :  L.Icon.extend({
+		options: {
+			iconUrl: 'http://openstreetbugs.schokokeks.org/client/open_bug_marker.png',
+			iconSize: new L.Point(22, 22),
+			shadowSize: new L.Point(0, 0),
+			iconAnchor: new L.Point(11, 11),
+			popupAnchor: new L.Point(0, -11)
+		}
+	}),
+
+	setPopupContent: function(id) {
+		if(this.bugs[id]._popup_content)
+			return;
+
+		var el1,el2,el3;
+		var layer = this;
+
+		var rawbug = putAJAXMarker.bugs[id];
+		var isclosed = rawbug[2];
+
+		var newContent = L.DomUtil.create('div', 'osb-popup');
+		var h1 = L.DomUtil.create('h1', null, newContent);
+		if (rawbug[2]) 
+			h1.textContent = L.i18n('Fixed Error');
+		else if (rawbug[1].length === 1)
+			h1.textContent = L.i18n('Unresolved Error');
+		else
+			h1.textContent = L.i18n('Active Error');
+
+		var divinfo = L.DomUtil.create('div', 'osb-info', newContent);
+		var table = L.DomUtil.create('table', 'osb-table', divinfo);
+		for(var i=0; i<rawbug[1].length; i++)
+		{
+			var tr = L.DomUtil.create('tr', 'osb-tr-info', table);
+			tr.setAttribute('valign','top');
+			var td_nickname = L.DomUtil.create('td', 'osb-td-nickname', tr);
+			td_nickname.textContent = rawbug[5][i] + ':';
+			var td_datetime = L.DomUtil.create('td', 'osb-td-datetime', tr);
+			td_datetime.textContent = rawbug[6][i];
+			var td_comment = L.DomUtil.create('td', 'osb-td-comment', L.DomUtil.create('tr', 'osb-tr-comment', table));
+			td_comment.setAttribute('colspan','2');
+			td_comment.setAttribute('charoff','2');
+			td_comment.textContent = rawbug[4][i];
+		}
+
+		function create_link(ul, text) {
+			var a = L.DomUtil.create('a', null,
+					L.DomUtil.create('li', null, ul));
+			a.href = '#';
+			a.textContent = L.i18n(text);
+			return a;
+		}
+
+		var ul = L.DomUtil.create('ul', null, newContent);
+		var _this = this;
+		var bug = this.bugs[id];
+
+		function showComment(title, add_comment) {
+			h1.textContent_old = h1.textContent;
+			h1.textContent = L.i18n(title);
+			var form = _this.createCommentForm();
+			form.osbid.value = id;
+			form.cancel.onclick = function (e) {
+				h1.textContent = h1.textContent_old;
+				newContent.removeChild(form);
+				newContent.appendChild(ul);
+			};
+			form.ok.onclick = function(e) {
+				bug.closePopup();
+				if (!add_comment)
+					_this.closeBug(form);
+				else
+					_this.submitComment(form);
+				return false;
+			};
+			newContent.appendChild(form);
+			newContent.removeChild(ul);
+			return false;
+		}
+
+		if (!isclosed && !this.options.readonly) {
+			var a;
+			a = create_link(ul, 'Add comment');
+			a.onclick = function(e) { return showComment('Add comment', true); };
+
+			a = create_link(ul, 'Mark as Fixed');
+			a.onclick = function(e) { return showComment('Close bug', false); };
+		}
+		var a_josm = create_link(ul, 'JOSM');
+		a_josm.onclick = function() { _this.remoteEdit(rawbug[0]); };
+
+		var a_link = create_link(ul, 'Link');
+		var vars = {lat:rawbug[0].lat, lon:rawbug[0].lng, zoom:this.options.permalinkZoom, bugid:id};
+		if (this.options.permalinkUrl)
+			a_link.href = L.Util.template(this.options.permalinkUrl, vars);
+		else
+			a_link.href = location.protocol + '//' + location.host + location.pathname +
+				L.Util.getParamString(vars);
+
+
+		bug._popup_content = newContent;
+		bug.bindPopup(newContent, this.options.popupOptions);
+		bug._popup.options.maxWidth=410;
+		bug._popup.options.minWidth=410;
+		bug.on('mouseover', bug.openTempPopup, bug);
+	},
+
+	submitComment: function(form) {
+		if (!form.osbcomment.value) return;
+		var nickname = form.osbnickname.value || this.options.username;
+		this.apiRequest('editPOIexec'
+			+ '?id='+encodeURIComponent(form.osbid.value)
+			+ '&text='+encodeURIComponent(form.osbcomment.value + ' [' + nickname + ']')
+			+ '&format=js', true
+		);
+		this.set_cookie('osbUsername',nickname);
+		this.options.username=nickname;
+	},
+
+	closeBug: function(form) {
+		var id = form.osbid.value;
+		this.submitComment(form);
+		this.apiRequest('closePOIexec'
+			+ '?id='+encodeURIComponent(id)
+			+ '&format=js', true
+		);
+	},
+
+	createCommentForm: function(elt) {
+		var form = L.DomUtil.create('form', 'osb-add-comment', elt);
+		var content = '';
+		content += '<input name="osbid" type="hidden"/>';
+		content += '<input name="osblat" type="hidden"/>';
+		content += '<input name="osblon" type="hidden"/>';
+		content += '<div><span class="osb-inputlabel">'+L.i18n('Nickname')+':</span><input type="text" name="osbnickname"></div>';
+		content += '<div><span class="osb-inputlabel">'+L.i18n('Comment')+':</span><input type="text" name="osbcomment"></div>';
+		content += '<div class="osb-formfooter"><input type="submit" name="ok"/><input type="button" name="cancel"/></div>';
+		form.innerHTML = content;
+		form.ok.value = L.i18n('OK');
+		form.cancel.value = L.i18n('Cancel');
+		form.osbnickname.value = this.options.username;
+		return form;
+	},
+
+	addBug: function(e) {
+		var newContent = L.DomUtil.create('div', 'osb-popup');
+
+		newContent.innerHTML += '<h1>'+L.i18n('New bug')+'</h1>';
+		newContent.innerHTML += '<div class="osbCreateInfo">'+L.i18n('Find your bug?')+'<br />'+L.i18n('Contact details and someone will fix it.')+'</div>';
+
+		var popup = new L.Popup();
+		var _this = this;
+		var form = this.createCommentForm(newContent);
+		form.osblat.value = e.latlng.lat;
+		form.osblon.value = e.latlng.lng;
+		form.ok.value = L.i18n('Add comment');
+		form.onsubmit = function(e) {
+			_this._map.closePopup(popup);
+			_this.createBug(form);
+			return false;
+		};
+		form.cancel.onclick = function(e) { _this._map.closePopup(popup); };
+
+		popup.setLatLng(e.latlng);
+		popup.setContent(newContent);
+		popup.options.maxWidth=410;
+		popup.options.minWidth=410;
+		popup.options.className += ' osb osbCreate';
+
+		this._map.openPopup(popup);
+	},
+
+	createBug: function(form) {
+		if (!form.osbcomment.value) return;
+		var nickname = form.osbnickname.value || this.options.username;
+		this.apiRequest('addPOIexec'
+			+ '?lat='+encodeURIComponent(form.osblat.value)
+			+ '&lon='+encodeURIComponent(form.osblon.value)
+			+ '&text='+encodeURIComponent(form.osbcomment.value + ' [' + nickname + ']')
+			+ '&format=js', true
+		);
+		this.set_cookie('osbUsername',nickname);
+		this.options.username=nickname;
+	},
+
+	remoteEdit: function(x) {
+		var ydelta = this.options.editArea || 0.01;
+		var xdelta = ydelta * 2;
+		var p = [ 'left='  + (x.lng - xdelta), 'bottom=' + (x.lat - ydelta), 'right=' + (x.lng + xdelta), 'top='    + (x.lat + ydelta)];
+		var url = 'http://localhost:8111/load_and_zoom?' + p.join('&');
+		var frame = L.DomUtil.create('iframe', null);
+		frame.style.display = 'none';
+		frame.src = url;
+		document.body.appendChild(frame);
+		frame.onload = function(e) { document.body.removeChild(frame); };
+		return false;
+	}
+});
+
+L.OpenStreetBugs.setCSS = function() {
+	if(L.OpenStreetBugs.setCSS.done)
+		return;
+	else
+		L.OpenStreetBugs.setCSS.done = true;
+
+	// See http://www.hunlock.com/blogs/Totally_Pwn_CSS_with_Javascript
+	var idx = 0;
+	var addRule = function(selector, rules) {
+		var s = document.styleSheets[0];
+		var rule;
+		if(s.addRule) // M$IE
+			rule = s.addRule(selector, rules, idx);
+		else
+			rule = s.insertRule(selector + ' { ' + rules + ' }', idx);
+		s.style = L.Util.extend(s.style || {}, rules);
+		idx++;
+	};
+
+	addRule('.osb-popup dl', 'margin:0; padding:0;');
+	addRule('.osb-popup dt', 'margin:0; padding:0; font-weight:bold; float:left; clear:left;');
+	addRule('.osb-popup dt:after', 'content: ": ";');
+	addRule('* html .osb-popup dt', 'margin-right:1ex;');
+	addRule('.osb-popup dd', 'margin:0; padding:0;');
+	addRule('.osb-popup ul.buttons', 'list-style-type:none; padding:0; margin:0;');
+	addRule('.osb-popup ul.buttons li', 'display:inline; margin:0; padding:0;');
+	addRule('.osb-popup h3', 'font-size:1.2em; margin:.2em 0 .7em 0;');
+};
+
+function putAJAXMarker(id, lon, lat, text, closed)
+{
+	var comments = text.split(/<hr \/>/);
+	var comments_only = [];
+	var nickname = [];
+	var datetime = [];
+	var info = null;
+	var isplit = 0;
+	var i;
+	for(i=0; i<comments.length; i++) {
+		info = null;
+		isplit = 0;
+		comments[i] = comments[i].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+		isplit = comments[i].lastIndexOf('[');
+		if (isplit > 0) {
+		  comments_only[i] = comments[i].substr(0,isplit-1);
+		  info = comments[i].substr(isplit+1);
+		  nickname[i] = info.substr(0,info.lastIndexOf(','));
+		  datetime[i] = info.substr(info.lastIndexOf(',')+2);
+		  datetime[i] = datetime[i].substr(0,datetime[i].lastIndexOf(']'));
+		}
+		else {
+		  comments_only[i] = comments[i];
+		}
+	}
+	var old = putAJAXMarker.bugs[id];
+	putAJAXMarker.bugs[id] = [
+		new L.LatLng(lat, lon),
+		comments,
+		closed,
+		text,
+		comments_only,
+		nickname,
+		datetime
+	];
+	var force = (old && old[3]) !== text;
+	for(i=0; i<putAJAXMarker.layers.length; i++)
+		putAJAXMarker.layers[i].createMarker(id, force);
+}
+
+function osbResponse(error)
+{
+	if(error)
+		alert('Error: '+error);
+
+	return;
+}
+
+putAJAXMarker.layers = [ ];
+putAJAXMarker.bugs = { };
+
+L.Marker.include({
+	openTempPopup: function() {
+		this.openPopup();
+		this.off('click', this.openPopup, this);
+
+		function onclick() {
+			this.off('mouseout', onout, this);
+			this.off('click', onclick, this);
+			this.on('click', this.openPopup, this);
+		}
+
+		function onout() {
+			onclick.call(this);
+			this.closePopup();
+		}
+		this.on('mouseout', onout, this);
+		this.on('click', onclick, this);
+	}
+});
+
+L.i18n = function(s) { return (L.i18n.lang[L.i18n.current] || {})[s] || s; };
+L.i18n.current = 'ru';
+L.i18n.lang = {};
+L.i18n.extend = function(lang, args) {
+	L.i18n.lang[lang] = L.Util.extend(L.i18n.lang[lang] || {}, args);
+};
+
+L.i18n.extend('ru', {
+	'Fixed Error':'Ошибка исправлена',
+	'Unresolved Error':'Неисправленная ошибка',
+	'Active Error':'Ошибка уточняется',
+	'Description':'Описание',
+	'Comment':'Описание',
+	'Add comment':'Дополнить',
+	'Mark as Fixed':'Исправлено',
+	'Link':'Ссылка',
+	'Cancel':'Отмена',
+	'New bug':'Я нашел ошибку',
+	'Find your bug?':'Нашли ошибку?',
+	'Contact details and someone will fix it.':'Напишите подробнее и кто-нибудь её исправит.'
+});
+
+L.GPX = L.FeatureGroup.extend({
+	initialize: function(gpx, options) {
+		L.Util.setOptions(this, options);
+		this._gpx = gpx;
+		this._layers = {};
+		
+		if (gpx) {
+			this.addGPX(gpx, options, this.options.async);
+		}
+	},
+	
+	loadXML: function(url, cb, options, async) {
+		if (async === undefined) async = this.options.async;
+		if (options === undefined) options = this.options;
+
+		var req = new window.XMLHttpRequest();
+		req.open('GET', url, async);
+		try {
+			req.overrideMimeType('text/xml'); // unsupported by IE
+		} catch(e) {}
+		req.onreadystatechange = function() {
+			if (req.readyState !== 4) return;
+			if(req.status === 200) cb(req.responseXML, options);
+		};
+		req.send(null);
+	},
+
+	_humanLen: function(l) {
+		if (l < 2000)
+			return l.toFixed(0) + ' m';
+		else
+			return (l/1000).toFixed(1) + ' km';
+	},
+	
+	_polylineLen: function(line)//line is a L.Polyline()
+	{
+		var ll = line._latlngs;
+		var d = 0, p = null;
+		for (var i = 0; i < ll.length; i++)
+		{
+			if(i && p)
+				d += p.distanceTo(ll[i]);
+			p = ll[i];
+		}
+		return d;
+	},
+
+	addGPX: function(url, options, async) {
+		var _this = this;
+		var cb = function(gpx, options) { _this._addGPX(gpx, options); };
+		this.loadXML(url, cb, options, async);
+	},
+
+	_addGPX: function(gpx, options) {
+		var layers = this.parseGPX(gpx, options);
+		if (!layers) return;
+		this.addLayer(layers);
+		this.fire('loaded');
+	},	
+
+	parseGPX: function(xml, options) {
+		var j, i, el, layers = [];
+		var named = false, tags = [['rte','rtept'], ['trkseg','trkpt']];
+
+		for (j = 0; j < tags.length; j++) {
+			el = xml.getElementsByTagName(tags[j][0]);
+			for (i = 0; i < el.length; i++) {
+				var l = this.parse_trkseg(el[i], xml, options, tags[j][1]);
+				for (var k = 0; k < l.length; k++) {
+					if (this.parse_name(el[i], l[k])) named = true;
+					layers.push(l[k]);
+				}
+			}
+		}
+
+		el = xml.getElementsByTagName('wpt');
+		if (options.display_wpt !== false) {
+			for (i = 0; i < el.length; i++) {
+				var marker = this.parse_wpt(el[i], xml, options);
+				if (!marker) continue;
+				if (this.parse_name(el[i], marker)) named = true;
+				layers.push(marker);
+			}
+		}
+
+		if (!layers.length) return;
+		var layer = layers[0];
+		if (layers.length > 1) 
+			layer = new L.FeatureGroup(layers);
+		if (!named) this.parse_name(xml, layer);
+		return layer;
+	},
+
+	parse_name: function(xml, layer) {
+		var i, el, txt='', name, descr='', len=0;
+		el = xml.getElementsByTagName('name');
+		if (el.length)
+			name = el[0].childNodes[0].nodeValue;
+		el = xml.getElementsByTagName('desc');
+		for (i = 0; i < el.length; i++) {
+			for (var j = 0; j < el[i].childNodes.length; j++)
+				descr = descr + el[i].childNodes[j].nodeValue;
+		}
+
+		if(layer instanceof L.Path)
+			len = this._polylineLen(layer);
+
+		if (name) txt += '<h2>' + name + '</h2>' + descr;
+		if (len) txt += '<p>' + this._humanLen(len) + '</p>';
+		
+		if (layer && layer._popup === undefined) layer.bindPopup(txt);
+		return txt;
+	},
+
+	parse_trkseg: function(line, xml, options, tag) {
+		var el = line.getElementsByTagName(tag);
+		if (!el.length) return [];
+		var coords = [];
+		for (var i = 0; i < el.length; i++) {
+			var ll = new L.LatLng(el[i].getAttribute('lat'),
+						el[i].getAttribute('lon'));
+			ll.meta = {};
+			for (var j in el[i].childNodes) {
+				var e = el[i].childNodes[j];
+				if (!e.tagName) continue;
+				ll.meta[e.tagName] = e.textContent;
+			}
+			coords.push(ll);
+		}
+		var l = [new L.Polyline(coords, options)];
+		this.fire('addline', {line:l});
+		return l;
+	},
+
+	parse_wpt: function(e, xml, options) {
+		var m = new L.Marker(new L.LatLng(e.getAttribute('lat'),
+						e.getAttribute('lon')), options);
+		this.fire('addpoint', {point:m});
+		return m;
+	}
+});
+
+//#include 'GPX.js'
+
+(function() {
+
+function d2h(d) {
+	var hex = '0123456789ABCDEF';
+	var r = '';
+	d = Math.floor(d);
+	while (d !== 0) {
+		r = hex[d % 16] + r;
+		d = Math.floor(d / 16);
+	}
+	while (r.length < 2) r = '0' + r;
+	return r;
+}
+
+function gradient(color) {
+	// First arc (0, PI) in HSV colorspace
+	function f2h(d) { return d2h(256 * d); }
+	if (color < 0)
+		return '#FF0000';
+	else if (color < 1.0/3)
+		return '#FF' + f2h(3 * color) + '00';
+	else if (color < 2.0/3)
+		return '#' + f2h(2 - 3 * color) + 'FF00';
+	else if (color < 1)
+		return '#00FF' + f2h(3 * color - 2);
+	else
+		return '#00FFFF';
+}
+
+function gpx2time(s) {
+	// 2011-09-24T12:07:53Z
+	if (s.length !== 10 + 1 + 8 + 1)
+		return new Date();
+	return new Date(s);
+}
+
+L.GPX.include({
+	options: {
+		maxSpeed: 110,
+		chunks: 200
+	},
+
+	speedSplitEnable: function(options) {
+		L.Util.setOptions(this, options);
+		return this.on('addline', this.speed_split, this);
+	},
+
+	speedSplitDisable: function() {
+		return this.off('addline', this.speed_split, this);
+	},
+
+	speed_split: function(e) {
+		var l = e.line.pop(), ll = l.getLatLngs();
+		var chunk = Math.floor(ll.length / this.options.chunks);
+		if (chunk < 3) chunk = 3;
+		var p = null;
+		for (var i = 0; i < ll.length; i += chunk) {
+			var d = 0, t = null;
+			if (i + chunk > ll.length)
+				chunk = ll.length - i;
+			for (var j = 0; j < chunk; j++) {
+				if (p) d += p.distanceTo(ll[i+j]);
+				p = ll[i + j];
+				if (!t) t = gpx2time(p.meta.time);
+			}
+			p = ll[i + chunk - 1];
+			t = (gpx2time(p.meta.time) - t) / (3600 * 1000);
+			var speed = 0.001 * d / t;
+			var color = gradient(speed / this.options.maxSpeed);
+			var poly = new L.Polyline(ll.slice(i, i+chunk+1), {color: color, weight: 2, opacity: 1});
+			poly.bindPopup('Dist: ' + d.toFixed() + 'm; Speed: ' + speed.toFixed(2) + ' km/h');
+			e.line.push(poly);
+		}
+	}
+
+});
+})();
+
+L.KML = L.FeatureGroup.extend({
+	options: {
+		async: true
+	},
+
+	initialize: function(kml, options) {
+		L.Util.setOptions(this, options);
+		this._kml = kml;
+		this._layers = {};
+
+		if (kml) {
+			this.addKML(kml, options, this.options.async);
+		}
+	},
+
+	loadXML: function(url, cb, options, async) {
+		if (async === undefined) async = this.options.async;
+		if (options === undefined) options = this.options;
+
+		var req = new window.XMLHttpRequest();
+		
+		// Check for IE8 and IE9 Fix Cors for those browsers
+		if (req.withCredentials === undefined && typeof window.XDomainRequest !== 'undefined') {
+			var xdr = new window.XDomainRequest();
+			xdr.open('GET', url, async);
+			xdr.onprogress = function () { };
+			xdr.ontimeout = function () { };
+			xdr.onerror = function () { };
+			xdr.onload = function () {
+				if (xdr.responseText) {
+					var xml = new window.ActiveXObject('Microsoft.XMLDOM');
+					xml.loadXML(xdr.responseText);
+					cb(xml, options);
+				}
+			};
+			setTimeout(function () { xdr.send(); }, 0);
+		} else {
+			req.open('GET', url, async);
+			try {
+				req.overrideMimeType('text/xml'); // unsupported by IE
+			} catch (e) { }
+			req.onreadystatechange = function () {
+				if (req.readyState !== 4) return;
+				if (req.status === 200) cb(req.responseXML, options);
+			};
+			req.send(null);
+		}
+	},
+
+	addKML: function(url, options, async) {
+		var _this = this;
+		var cb = function(gpx, options) { _this._addKML(gpx, options); };
+		this.loadXML(url, cb, options, async);
+	},
+
+	_addKML: function(xml, options) {
+		var layers = L.KML.parseKML(xml);
+		if (!layers || !layers.length) return;
+		for (var i = 0; i < layers.length; i++) {
+			this.fire('addlayer', {
+				layer: layers[i]
+			});
+			this.addLayer(layers[i]);
+		}
+		this.latLngs = L.KML.getLatLngs(xml);
+		this.fire('loaded');
+	},
+
+	latLngs: []
+});
+
+L.Util.extend(L.KML, {
+
+	parseKML: function (xml) {
+		var style = this.parseStyles(xml);
+		this.parseStyleMap(xml, style);
+		var el = xml.getElementsByTagName('Folder');
+		var layers = [], l;
+		for (var i = 0; i < el.length; i++) {
+			if (!this._check_folder(el[i])) { continue; }
+			l = this.parseFolder(el[i], style);
+			if (l) { layers.push(l); }
+		}
+		el = xml.getElementsByTagName('Placemark');
+		for (var j = 0; j < el.length; j++) {
+			if (!this._check_folder(el[j])) { continue; }
+			l = this.parsePlacemark(el[j], xml, style);
+			if (l) { layers.push(l); }
+		}
+		el = xml.getElementsByTagName('GroundOverlay');
+		for (var k = 0; k < el.length; k++) {
+			l = this.parseGroundOverlay(el[k]);
+			if (l) { layers.push(l); }
+		}
+		return layers;
+	},
+
+	// Return false if e's first parent Folder is not [folder]
+	// - returns true if no parent Folders
+	_check_folder: function (e, folder) {
+		e = e.parentNode;
+		while (e && e.tagName !== 'Folder')
+		{
+			e = e.parentNode;
+		}
+		return !e || e === folder;
+	},
+
+	parseStyles: function(xml) {
+		var styles = {};
+		var sl = xml.getElementsByTagName('Style');
+		for (var i=0, len=sl.length; i<len; i++) {
+			var style = this.parseStyle(sl[i]);
+			if (style) {
+				var styleName = '#' + style.id;
+				styles[styleName] = style;
+			}
+		}
+		return styles;
+	},
+
+	parseStyle: function (xml) {
+		var style = {}, poptions = {}, ioptions = {}, el, id;
+
+		var attributes = { color: true, width: true, Icon: true, href: true, hotSpot: true };
+
+		function _parse(xml) {
+			var options = {};
+			for (var i = 0; i < xml.childNodes.length; i++) {
+				var e = xml.childNodes[i];
+				var key = e.tagName;
+				if (!attributes[key]) { continue; }
+				if (key === 'hotSpot')
+				{
+					for (var j = 0; j < e.attributes.length; j++) {
+						options[e.attributes[j].name] = e.attributes[j].nodeValue;
+					}
+				} else {
+					var value = e.childNodes[0].nodeValue;
+					if (key === 'color') {
+						options.opacity = parseInt(value.substring(0, 2), 16) / 255.0;
+						options.color = '#' + value.substring(6, 8) + value.substring(4, 6) + value.substring(2, 4);
+					} else if (key === 'width') {
+						options.weight = value;
+					} else if (key === 'Icon') {
+						ioptions = _parse(e);
+						if (ioptions.href) { options.href = ioptions.href; }
+					} else if (key === 'href') {
+						options.href = value;
+					}
+				}
+			}
+			return options;
+		}
+
+		el = xml.getElementsByTagName('LineStyle');
+		if (el && el[0]) { style = _parse(el[0]); }
+		el = xml.getElementsByTagName('PolyStyle');
+		if (el && el[0]) { poptions = _parse(el[0]); }
+		if (poptions.color) { style.fillColor = poptions.color; }
+		if (poptions.opacity) { style.fillOpacity = poptions.opacity; }
+		el = xml.getElementsByTagName('IconStyle');
+		if (el && el[0]) { ioptions = _parse(el[0]); }
+		if (ioptions.href) {
+			style.icon = new L.KMLIcon({
+				iconUrl: ioptions.href,
+				shadowUrl: null,
+				anchorRef: {x: ioptions.x, y: ioptions.y},
+				anchorType:	{x: ioptions.xunits, y: ioptions.yunits}
+			});
+		}
+		
+		id = xml.getAttribute('id');
+		if (id && style) {
+			style.id = id;
+		}
+		
+		return style;
+	},
+	
+	parseStyleMap: function (xml, existingStyles) {
+		var sl = xml.getElementsByTagName('StyleMap');
+		
+		for (var i = 0; i < sl.length; i++) {
+			var e = sl[i], el;
+			var smKey, smStyleUrl;
+			
+			el = e.getElementsByTagName('key');
+			if (el && el[0]) { smKey = el[0].textContent; }
+			el = e.getElementsByTagName('styleUrl');
+			if (el && el[0]) { smStyleUrl = el[0].textContent; }
+			
+			if (smKey === 'normal')
+			{
+				existingStyles['#' + e.getAttribute('id')] = existingStyles[smStyleUrl];
+			}
+		}
+		
+		return;
+	},
+
+	parseFolder: function (xml, style) {
+		var el, layers = [], l;
+		el = xml.getElementsByTagName('Folder');
+		for (var i = 0; i < el.length; i++) {
+			if (!this._check_folder(el[i], xml)) { continue; }
+			l = this.parseFolder(el[i], style);
+			if (l) { layers.push(l); }
+		}
+		el = xml.getElementsByTagName('Placemark');
+		for (var j = 0; j < el.length; j++) {
+			if (!this._check_folder(el[j], xml)) { continue; }
+			l = this.parsePlacemark(el[j], xml, style);
+			if (l) { layers.push(l); }
+		}
+		el = xml.getElementsByTagName('GroundOverlay');
+		for (var k = 0; k < el.length; k++) {
+			if (!this._check_folder(el[k], xml)) { continue; }
+			l = this.parseGroundOverlay(el[k]);
+			if (l) { layers.push(l); }
+		}
+		if (!layers.length) { return; }
+		if (layers.length === 1) { return layers[0]; }
+		return new L.FeatureGroup(layers);
+	},
+
+	parsePlacemark: function (place, xml, style) {
+		var h, i, j, k, el, il, options = {};
+
+		var multi = ['MultiGeometry', 'MultiTrack', 'gx:MultiTrack'];
+		for (h in multi) {
+			el = place.getElementsByTagName(multi[h]);
+			for (i = 0; i < el.length; i++) {
+				return this.parsePlacemark(el[i], xml, style);
+			}
+		}
+
+		el = place.getElementsByTagName('styleUrl');
+		for (i = 0; i < el.length; i++) {
+			var url = el[i].childNodes[0].nodeValue;
+			for (var a in style[url]) {
+				options[a] = style[url][a];
+			}
+		}
+		
+		il = place.getElementsByTagName('Style')[0];
+		if (il) {
+			var inlineStyle = this.parseStyle(place);
+			if (inlineStyle) {
+				for (k in inlineStyle) {
+					options[k] = inlineStyle[k];
+				}
+			}
+		}
+		
+		var layers = [];
+
+		var parse = ['LineString', 'Polygon', 'Point', 'Track', 'gx:Track'];
+		for (j in parse) {
+			var tag = parse[j];
+			el = place.getElementsByTagName(tag);
+			for (i = 0; i < el.length; i++) {
+				var l = this['parse' + tag.replace(/gx:/, '')](el[i], xml, options);
+				if (l) { layers.push(l); }
+			}
+		}
+
+		if (!layers.length) {
+			return;
+		}
+		var layer = layers[0];
+		if (layers.length > 1) {
+			layer = new L.FeatureGroup(layers);
+		}
+
+		var name, descr = '';
+		el = place.getElementsByTagName('name');
+		if (el.length && el[0].childNodes.length) {
+			name = el[0].childNodes[0].nodeValue;
+		}
+		el = place.getElementsByTagName('description');
+		for (i = 0; i < el.length; i++) {
+			for (j = 0; j < el[i].childNodes.length; j++) {
+				descr = descr + el[i].childNodes[j].nodeValue;
+			}
+		}
+
+		if (name) {
+			layer.on('add', function(e) {
+				layer.bindPopup('<h2>' + name + '</h2>' + descr);
+			});
+		}
+
+		return layer;
+	},
+
+	parseCoords: function (xml) {
+		var el = xml.getElementsByTagName('coordinates');
+		return this._read_coords(el[0]);
+	},
+
+	parseLineString: function (line, xml, options) {
+		var coords = this.parseCoords(line);
+		if (!coords.length) { return; }
+		return new L.Polyline(coords, options);
+	},
+
+	parseTrack: function (line, xml, options) {
+		var el = xml.getElementsByTagName('gx:coord');
+		if (el.length === 0) { el = xml.getElementsByTagName('coord'); }
+		var coords = [];
+		for (var j = 0; j < el.length; j++) {
+			coords = coords.concat(this._read_gxcoords(el[j]));
+		}
+		if (!coords.length) { return; }
+		return new L.Polyline(coords, options);
+	},
+
+	parsePoint: function (line, xml, options) {
+		var el = line.getElementsByTagName('coordinates');
+		if (!el.length) {
+			return;
+		}
+		var ll = el[0].childNodes[0].nodeValue.split(',');
+		return new L.KMLMarker(new L.LatLng(ll[1], ll[0]), options);
+	},
+
+	parsePolygon: function (line, xml, options) {
+		var el, polys = [], inner = [], i, coords;
+		el = line.getElementsByTagName('outerBoundaryIs');
+		for (i = 0; i < el.length; i++) {
+			coords = this.parseCoords(el[i]);
+			if (coords) {
+				polys.push(coords);
+			}
+		}
+		el = line.getElementsByTagName('innerBoundaryIs');
+		for (i = 0; i < el.length; i++) {
+			coords = this.parseCoords(el[i]);
+			if (coords) {
+				inner.push(coords);
+			}
+		}
+		if (!polys.length) {
+			return;
+		}
+		if (options.fillColor) {
+			options.fill = true;
+		}
+		if (polys.length === 1) {
+			return new L.Polygon(polys.concat(inner), options);
+		}
+		return new L.MultiPolygon(polys, options);
+	},
+
+	getLatLngs: function (xml) {
+		var el = xml.getElementsByTagName('coordinates');
+		var coords = [];
+		for (var j = 0; j < el.length; j++) {
+			// text might span many childNodes
+			coords = coords.concat(this._read_coords(el[j]));
+		}
+		return coords;
+	},
+
+	_read_coords: function (el) {
+		var text = '', coords = [], i;
+		for (i = 0; i < el.childNodes.length; i++) {
+			text = text + el.childNodes[i].nodeValue;
+		}
+		text = text.split(/[\s\n]+/);
+		for (i = 0; i < text.length; i++) {
+			var ll = text[i].split(',');
+			if (ll.length < 2) {
+				continue;
+			}
+			coords.push(new L.LatLng(ll[1], ll[0]));
+		}
+		return coords;
+	},
+
+	_read_gxcoords: function (el) {
+		var text = '', coords = [];
+		text = el.firstChild.nodeValue.split(' ');
+		coords.push(new L.LatLng(text[1], text[0]));
+		return coords;
+	},
+
+	parseGroundOverlay: function (xml) {
+		var latlonbox = xml.getElementsByTagName('LatLonBox')[0];
+		var bounds = new L.LatLngBounds(
+			[
+				latlonbox.getElementsByTagName('south')[0].childNodes[0].nodeValue,
+				latlonbox.getElementsByTagName('west')[0].childNodes[0].nodeValue
+			],
+			[
+				latlonbox.getElementsByTagName('north')[0].childNodes[0].nodeValue,
+				latlonbox.getElementsByTagName('east')[0].childNodes[0].nodeValue
+			]
+		);
+		var attributes = {Icon: true, href: true, color: true};
+		function _parse(xml) {
+			var options = {}, ioptions = {};
+			for (var i = 0; i < xml.childNodes.length; i++) {
+				var e = xml.childNodes[i];
+				var key = e.tagName;
+				if (!attributes[key]) { continue; }
+				var value = e.childNodes[0].nodeValue;
+				if (key === 'Icon') {
+					ioptions = _parse(e);
+					if (ioptions.href) { options.href = ioptions.href; }
+				} else if (key === 'href') {
+					options.href = value;
+				} else if (key === 'color') {
+					options.opacity = parseInt(value.substring(0, 2), 16) / 255.0;
+					options.color = '#' + value.substring(6, 8) + value.substring(4, 6) + value.substring(2, 4);
+				}
+			}
+			return options;
+		}
+		var options = {};
+		options = _parse(xml);
+		if (latlonbox.getElementsByTagName('rotation')[0] !== undefined) {
+			var rotation = latlonbox.getElementsByTagName('rotation')[0].childNodes[0].nodeValue;
+			options.rotation = parseFloat(rotation);
+		}
+		return new L.RotatedImageOverlay(options.href, bounds, {opacity: options.opacity, angle: options.rotation});
+	}
+
+});
+
+L.KMLIcon = L.Icon.extend({
+	_setIconStyles: function (img, name) {
+		L.Icon.prototype._setIconStyles.apply(this, [img, name]);
+		var options = this.options;
+		this.options.popupAnchor = [0,(-0.83*img.height)];
+		if (options.anchorType.x === 'fraction')
+			img.style.marginLeft = (-options.anchorRef.x * img.width) + 'px';
+		if (options.anchorType.y === 'fraction')
+			img.style.marginTop  = ((-(1 - options.anchorRef.y) * img.height) + 1) + 'px';
+		if (options.anchorType.x === 'pixels')
+			img.style.marginLeft = (-options.anchorRef.x) + 'px';
+		if (options.anchorType.y === 'pixels')
+			img.style.marginTop  = (options.anchorRef.y - img.height + 1) + 'px';
+	}
+});
+
+
+L.KMLMarker = L.Marker.extend({
+	options: {
+		icon: new L.KMLIcon.Default()
+	}
+});
+
+// Inspired by https://github.com/bbecquet/Leaflet.PolylineDecorator/tree/master/src
+L.RotatedImageOverlay = L.ImageOverlay.extend({
+	options: {
+		angle: 0
+	},
+	_reset: function () {
+		L.ImageOverlay.prototype._reset.call(this);
+		this._rotate();
+	},
+	_animateZoom: function (e) {
+		L.ImageOverlay.prototype._animateZoom.call(this, e);
+		this._rotate();
+	},
+	_rotate: function () {
+        if (L.DomUtil.TRANSFORM) {
+            // use the CSS transform rule if available
+            this._image.style[L.DomUtil.TRANSFORM] += ' rotate(' + this.options.angle + 'deg)';
+        } else if(L.Browser.ie) {
+            // fallback for IE6, IE7, IE8
+            var rad = this.options.angle * (Math.PI / 180),
+                costheta = Math.cos(rad),
+                sintheta = Math.sin(rad);
+            this._image.style.filter += ' progid:DXImageTransform.Microsoft.Matrix(sizingMethod=\'auto expand\', M11=' + 
+                costheta + ', M12=' + (-sintheta) + ', M21=' + sintheta + ', M22=' + costheta + ')';                
+        }
+	},
+	getBounds: function() {
+		return this._bounds;
+	}
+});
+
+
+L.OSM = L.FeatureGroup.extend({
+	options: {
+		async: true,
+		forceAll: false
+	},
+
+	initialize: function(url, options) {
+		L.Util.setOptions(this, options);
+		this._url = url;
+		this._layers = {};
+		
+		if (url) {
+			this.addXML(url, options, this.options.async);
+		}
+	},
+	
+	loadXML: function(url, cb, options, async) {
+		if (async === undefined) async = this.options.async;
+		if (options === undefined) options = this.options;
+
+		var req = new window.XMLHttpRequest();
+		req.open('GET', url, async);
+		req.overrideMimeType('text/xml');
+		req.onreadystatechange = function() {
+			if (req.readyState !== 4) return;
+			if (req.status === 200) cb(req.responseXML, options);
+		};
+		req.send(null);
+	},
+
+	addXML: function(url, options, async) {
+		var _this = this;
+		var cb = function(xml, options) { _this._addXML(xml, options); };
+		this.loadXML(url, cb, options, async);
+	},
+
+	_addXML: function(xml, options) {
+		var layers = this.parseOSM(xml, options);
+		if (!layers) return;
+		this.addLayer(layers);
+		this.fire('loaded');
+	},
+
+	parseOSM: function(xml, options) {
+		var i, el, ll, layers = [];
+		var nodes = {};
+		var ways = {};
+		var named = false;
+
+		el = xml.getElementsByTagName('node');
+		for (i = 0; i < el.length; i++) {
+			var l = this.parse_node(el[i], xml, options);
+			if (l === undefined) continue;
+			nodes[l.osmid] = l;
+			if (!this.options.forceAll && !l.tags.length) continue;
+			var m = this.named_node(l, options);
+			if (!ll) ll = m.getLatLng();
+			if (this.parse_name(m, l, 'Node')) named = true;
+			layers.push(m);
+		}
+
+		el = xml.getElementsByTagName('way');
+		for (i = 0; i < el.length; i++) {
+			if (i > 10) break;
+			var way = this.parse_way(el[i], nodes, options);
+			if (!way) continue;
+			if (!ll) ll = way.getLatLngs()[0];
+			if (this.parse_name(way, way, 'Way')) named = true;
+			layers.push(way);
+			ways[way.osmid] = way;
+		}
+
+		el = xml.getElementsByTagName('relation');
+		for (i = 0; i < el.length; i++) {
+			if (i > 10) break;
+			var relation = this.parse_relation(el[i], ways, options);
+			if (!relation) continue;
+			if (!ll) ll = relation.getLatLngs()[0];
+			if (this.parse_name(relation, relation, 'Relation')) named = true;
+			layers.push(relation);
+		}
+
+		if (!layers.length) return;
+		var layer = layers[0];
+		if (layers.length > 1) 
+			layer = new L.FeatureGroup(layers);
+		if (!named) this.parse_name(xml, layer);
+		layer.focusPoint = ll;
+		return layer;
+	},
+
+	parse_name: function(layer, obj, obj_name) {
+		if (!this.options.forceAll)
+			if (!obj.tags || !obj.tags.length) return;
+		var i, txt = '<table>';
+		for (i = 0; i < obj.tags.length; i++) {
+			var t = obj.tags[i];
+			txt += '<tr><td>' + t.k + '</td><td>=</td><td>' + t.v + '</td></tr>';
+		}
+		txt += '</table>';
+		txt = '<h2>' + obj_name + ' ' + obj.osmid + '</h2>' + txt;
+		if (layer) layer.bindPopup(txt);
+		return txt;
+	},
+
+	parse_tags: function(line) {
+		var tags = [], el = line.getElementsByTagName('tag');
+		for (var i = 0; i < el.length; i++)
+			tags.push({k: el[i].getAttribute('k'), v: el[i].getAttribute('v')});
+		return tags;
+	},
+
+	parse_node: function(e) {
+		var n = { osmid: e.getAttribute('id'),
+			lat:e.getAttribute('lat'),
+			lon:e.getAttribute('lon')
+		};
+		n.ll = new L.LatLng(n.lat, n.lon);
+		n.tags = this.parse_tags(e);
+		return n;
+	},
+
+	parse_way: function(line, nodes, options) {
+		var el = line.getElementsByTagName('nd');
+		if (!el.length) return;
+		var coords = [], tags = [];
+		for (var i = 0; i < el.length; i++) {
+			var ref = el[i].getAttribute('ref'), n = nodes[ref];
+			if (!n) return;
+			coords.push(n.ll);
+		}
+		var layer = new L.Polyline(coords, options);
+		layer.tags = this.parse_tags(line);
+		layer.osmid = line.getAttribute('id');
+		return layer;
+	},
+
+	parse_relation: function(line, ways, options) {
+		var el = line.getElementsByTagName('member');
+		if (!el.length) return;
+		var rt, coords = [], tags = this.parse_tags(line);
+		var i;
+		for (i = 0; i < tags.length; i++)
+			if (tags[i].k === 'type') rt = tags[i].v;
+
+		if (rt !== 'multipolygon' && rt !== 'boundary' && rt !== 'waterway')
+			return;
+
+		for (i = 0; i < el.length; i++) {
+			var mt = el[i].getAttribute('type'), ref = el[i].getAttribute('ref');
+			if (mt !== 'way') continue;
+			var w = ways[ref];
+			if (!w) return;
+			coords.push(w);
+		}
+		if (!coords.length) return;
+		var layer = new L.MultiPolyline(coords, options);
+		layer.tags = this.parse_tags(line);
+		layer.osmid = line.getAttribute('id');
+		return layer;
+	},
+
+	named_node: function(node, options) {
+		var marker = new L.Marker(new L.LatLng(node.lat, node.lon), options);
+		return marker;
+	}
+});
+
+L.BingLayer = L.TileLayer.extend({
+	options: {
+		subdomains: [0, 1, 2, 3],
+		type: 'Aerial',
+		attribution: 'Bing',
+		culture: ''
+	},
+
+	initialize: function(key, options) {
+		L.Util.setOptions(this, options);
+
+		this._key = key;
+		this._url = null;
+		this.metaRequested = false;
+	},
+
+	tile2quad: function(x, y, z) {
+		var quad = '';
+		for (var i = z; i > 0; i--) {
+			var digit = 0;
+			var mask = 1 << (i - 1);
+			if ((x & mask) !== 0) digit += 1;
+			if ((y & mask) !== 0) digit += 2;
+			quad = quad + digit;
+		}
+		return quad;
+	},
+
+	getTileUrl: function(p, z) {
+		var zoom = this._getZoomForUrl();
+		var subdomains = this.options.subdomains,
+			s = this.options.subdomains[Math.abs((p.x + p.y) % subdomains.length)];
+		return this._url.replace('{subdomain}', s)
+				.replace('{quadkey}', this.tile2quad(p.x, p.y, zoom))
+				.replace('{culture}', this.options.culture);
+	},
+
+	loadMetadata: function() {
+		if (this.metaRequested) return;
+		this.metaRequested = true;
+		var _this = this;
+		var cbid = '_bing_metadata_' + L.Util.stamp(this);
+		window[cbid] = function (meta) {
+			window[cbid] = undefined;
+			var e = document.getElementById(cbid);
+			e.parentNode.removeChild(e);
+			if (meta.errorDetails) {
+				return;
+			}
+			_this.initMetadata(meta);
+		};
+		var urlScheme = (document.location.protocol === 'file:') ? 'http' : document.location.protocol.slice(0, -1);
+		var url = urlScheme + '://dev.virtualearth.net/REST/v1/Imagery/Metadata/'
+					+ this.options.type + '?include=ImageryProviders&jsonp=' + cbid +
+					'&key=' + this._key + '&UriScheme=' + urlScheme;
+		var script = document.createElement('script');
+		script.type = 'text/javascript';
+		script.src = url;
+		script.id = cbid;
+		document.getElementsByTagName('head')[0].appendChild(script);
+	},
+
+	initMetadata: function(meta) {
+		var r = meta.resourceSets[0].resources[0];
+		this.options.subdomains = r.imageUrlSubdomains;
+		this._url = r.imageUrl;
+		this._providers = [];
+		if (r.imageryProviders) {
+			for (var i = 0; i < r.imageryProviders.length; i++) {
+				var p = r.imageryProviders[i];
+				for (var j = 0; j < p.coverageAreas.length; j++) {
+					var c = p.coverageAreas[j];
+					var coverage = {zoomMin: c.zoomMin, zoomMax: c.zoomMax, active: false};
+					var bounds = new L.LatLngBounds(
+							new L.LatLng(c.bbox[0]+0.01, c.bbox[1]+0.01),
+							new L.LatLng(c.bbox[2]-0.01, c.bbox[3]-0.01)
+					);
+					coverage.bounds = bounds;
+					coverage.attrib = p.attribution;
+					this._providers.push(coverage);
+				}
+			}
+		}
+		this._update();
+	},
+
+	_update: function() {
+		if (this._url === null || !this._map) return;
+		this._update_attribution();
+		L.TileLayer.prototype._update.apply(this, []);
+	},
+
+	_update_attribution: function() {
+		var bounds = this._map.getBounds();
+		var zoom = this._map.getZoom();
+		for (var i = 0; i < this._providers.length; i++) {
+			var p = this._providers[i];
+			if ((zoom <= p.zoomMax && zoom >= p.zoomMin) &&
+					bounds.intersects(p.bounds)) {
+				if (!p.active && this._map.attributionControl)
+					this._map.attributionControl.addAttribution(p.attrib);
+				p.active = true;
+			} else {
+				if (p.active && this._map.attributionControl)
+					this._map.attributionControl.removeAttribution(p.attrib);
+				p.active = false;
+			}
+		}
+	},
+	
+	onAdd: function(map) {
+		this.loadMetadata();
+		L.TileLayer.prototype.onAdd.apply(this, [map]);
+	},
+
+	onRemove: function(map) {
+		for (var i = 0; i < this._providers.length; i++) {
+			var p = this._providers[i];
+			if (p.active && this._map.attributionControl) {
+				this._map.attributionControl.removeAttribution(p.attrib);
+				p.active = false;
+			}
+		}
+        	L.TileLayer.prototype.onRemove.apply(this, [map]);
+	}
+});
+
+L.bingLayer = function (key, options) {
+    return new L.BingLayer(key, options);
+};
+
+/*
+ * Google layer using Google Maps API
+ */
+
+/* global google: true */
+
+L.Google = L.Class.extend({
+	includes: L.Mixin.Events,
+
+	options: {
+		minZoom: 0,
+		maxZoom: 18,
+		tileSize: 256,
+		subdomains: 'abc',
+		errorTileUrl: '',
+		attribution: '',
+		opacity: 1,
+		continuousWorld: false,
+		noWrap: false,
+		mapOptions: {
+			backgroundColor: '#dddddd'
+		}
+	},
+
+	// Possible types: SATELLITE, ROADMAP, HYBRID, TERRAIN
+	initialize: function(type, options) {
+		L.Util.setOptions(this, options);
+
+		this._ready = google.maps.Map !== undefined;
+		if (!this._ready) L.Google.asyncWait.push(this);
+
+		this._type = type || 'SATELLITE';
+	},
+
+	onAdd: function(map, insertAtTheBottom) {
+		this._map = map;
+		this._insertAtTheBottom = insertAtTheBottom;
+
+		// create a container div for tiles
+		this._initContainer();
+		this._initMapObject();
+
+		// set up events
+		map.on('viewreset', this._resetCallback, this);
+
+		this._limitedUpdate = L.Util.limitExecByInterval(this._update, 150, this);
+		map.on('move', this._update, this);
+
+		map.on('zoomanim', this._handleZoomAnim, this);
+
+		//20px instead of 1em to avoid a slight overlap with google's attribution
+		map._controlCorners.bottomright.style.marginBottom = '20px';
+
+		this._reset();
+		this._update();
+	},
+
+	onRemove: function(map) {
+		map._container.removeChild(this._container);
+
+		map.off('viewreset', this._resetCallback, this);
+
+		map.off('move', this._update, this);
+
+		map.off('zoomanim', this._handleZoomAnim, this);
+
+		map._controlCorners.bottomright.style.marginBottom = '0em';
+	},
+
+	getAttribution: function() {
+		return this.options.attribution;
+	},
+
+	setOpacity: function(opacity) {
+		this.options.opacity = opacity;
+		if (opacity < 1) {
+			L.DomUtil.setOpacity(this._container, opacity);
+		}
+	},
+
+	setElementSize: function(e, size) {
+		e.style.width = size.x + 'px';
+		e.style.height = size.y + 'px';
+	},
+
+	_initContainer: function() {
+		var tilePane = this._map._container,
+			first = tilePane.firstChild;
+
+		if (!this._container) {
+			this._container = L.DomUtil.create('div', 'leaflet-google-layer leaflet-top leaflet-left');
+			this._container.id = '_GMapContainer_' + L.Util.stamp(this);
+			this._container.style.zIndex = 'auto';
+		}
+
+		tilePane.insertBefore(this._container, first);
+
+		this.setOpacity(this.options.opacity);
+		this.setElementSize(this._container, this._map.getSize());
+	},
+
+	_initMapObject: function() {
+		if (!this._ready) return;
+		this._google_center = new google.maps.LatLng(0, 0);
+		var map = new google.maps.Map(this._container, {
+			center: this._google_center,
+			zoom: 0,
+			tilt: 0,
+			mapTypeId: google.maps.MapTypeId[this._type],
+			disableDefaultUI: true,
+			keyboardShortcuts: false,
+			draggable: false,
+			disableDoubleClickZoom: true,
+			scrollwheel: false,
+			streetViewControl: false,
+			styles: this.options.mapOptions.styles,
+			backgroundColor: this.options.mapOptions.backgroundColor
+		});
+
+		var _this = this;
+		this._reposition = google.maps.event.addListenerOnce(map, 'center_changed',
+			function() { _this.onReposition(); });
+		this._google = map;
+
+		google.maps.event.addListenerOnce(map, 'idle',
+			function() { _this._checkZoomLevels(); });
+		google.maps.event.addListenerOnce(map, 'tilesloaded',
+			function() { _this.fire('load'); });
+		//Reporting that map-object was initialized.
+		this.fire('MapObjectInitialized', { mapObject: map });
+	},
+
+	_checkZoomLevels: function() {
+		//setting the zoom level on the Google map may result in a different zoom level than the one requested
+		//(it won't go beyond the level for which they have data).
+		// verify and make sure the zoom levels on both Leaflet and Google maps are consistent
+		if (this._google.getZoom() !== this._map.getZoom()) {
+			//zoom levels are out of sync. Set the leaflet zoom level to match the google one
+			this._map.setZoom( this._google.getZoom() );
+		}
+	},
+
+	_resetCallback: function(e) {
+		this._reset(e.hard);
+	},
+
+	_reset: function(clearOldContainer) {
+		this._initContainer();
+	},
+
+	_update: function(e) {
+		if (!this._google) return;
+		this._resize();
+
+		var center = this._map.getCenter();
+		var _center = new google.maps.LatLng(center.lat, center.lng);
+
+		this._google.setCenter(_center);
+		this._google.setZoom(Math.round(this._map.getZoom()));
+
+		this._checkZoomLevels();
+	},
+
+	_resize: function() {
+		var size = this._map.getSize();
+		if (this._container.style.width === size.x &&
+				this._container.style.height === size.y)
+			return;
+		this.setElementSize(this._container, size);
+		this.onReposition();
+	},
+
+
+	_handleZoomAnim: function (e) {
+		var center = e.center;
+		var _center = new google.maps.LatLng(center.lat, center.lng);
+
+		this._google.setCenter(_center);
+		this._google.setZoom(Math.round(e.zoom));
+	},
+
+
+	onReposition: function() {
+		if (!this._google) return;
+		google.maps.event.trigger(this._google, 'resize');
+	}
+});
+
+L.Google.asyncWait = [];
+L.Google.asyncInitialize = function() {
+	var i;
+	for (i = 0; i < L.Google.asyncWait.length; i++) {
+		var o = L.Google.asyncWait[i];
+		o._ready = true;
+		if (o._container) {
+			o._initMapObject();
+			o._update();
+		}
+	}
+	L.Google.asyncWait = [];
+};
+
+/*
+ * L.TileLayer is used for standard xyz-numbered tile layers.
+ */
+
+/* global ymaps: true */
+
+L.Yandex = L.Class.extend({
+	includes: L.Mixin.Events,
+
+	options: {
+		minZoom: 0,
+		maxZoom: 18,
+		attribution: '',
+		opacity: 1,
+		traffic: false
+	},
+
+	possibleShortMapTypes: {
+		schemaMap: 'map',
+		satelliteMap: 'satellite',
+		hybridMap: 'hybrid',
+		publicMap: 'publicMap',
+		publicMapInHybridView: 'publicMapHybrid'
+	},
+	
+	_getPossibleMapType: function (mapType) {
+		var result = 'yandex#map';
+		if (typeof mapType !== 'string') {
+			return result;
+		}
+		for (var key in this.possibleShortMapTypes) {
+			if (mapType === this.possibleShortMapTypes[key]) {
+				result = 'yandex#' + mapType;
+				break;
+			}
+			if (mapType === ('yandex#' + this.possibleShortMapTypes[key])) {
+				result = mapType;
+			}
+		}
+		return result;
+	},
+	
+	// Possible types: yandex#map, yandex#satellite, yandex#hybrid, yandex#publicMap, yandex#publicMapHybrid
+	// Or their short names: map, satellite, hybrid, publicMap, publicMapHybrid
+	initialize: function(type, options) {
+		L.Util.setOptions(this, options);
+		//Assigning an initial map type for the Yandex layer
+		this._type = this._getPossibleMapType(type);
+	},
+
+	onAdd: function(map, insertAtTheBottom) {
+		this._map = map;
+		this._insertAtTheBottom = insertAtTheBottom;
+
+		// create a container div for tiles
+		this._initContainer();
+		this._initMapObject();
+
+		// set up events
+		map.on('viewreset', this._resetCallback, this);
+
+		this._limitedUpdate = L.Util.limitExecByInterval(this._update, 150, this);
+		map.on('move', this._update, this);
+
+		map._controlCorners.bottomright.style.marginBottom = '3em';
+
+		this._reset();
+		this._update(true);
+	},
+
+	onRemove: function(map) {
+		this._map._container.removeChild(this._container);
+
+		this._map.off('viewreset', this._resetCallback, this);
+
+		this._map.off('move', this._update, this);
+
+		map._controlCorners.bottomright.style.marginBottom = '0em';
+	},
+
+	getAttribution: function() {
+		return this.options.attribution;
+	},
+
+	setOpacity: function(opacity) {
+		this.options.opacity = opacity;
+		if (opacity < 1) {
+			L.DomUtil.setOpacity(this._container, opacity);
+		}
+	},
+
+	setElementSize: function(e, size) {
+		e.style.width = size.x + 'px';
+		e.style.height = size.y + 'px';
+	},
+
+	_initContainer: function() {
+		var tilePane = this._map._container,
+			first = tilePane.firstChild;
+
+		if (!this._container) {
+			this._container = L.DomUtil.create('div', 'leaflet-yandex-layer leaflet-top leaflet-left');
+			this._container.id = '_YMapContainer_' + L.Util.stamp(this);
+			this._container.style.zIndex = 'auto';
+		}
+
+		if (this.options.overlay) {
+			first = this._map._container.getElementsByClassName('leaflet-map-pane')[0];
+			first = first.nextSibling;
+			// XXX: Bug with layer order
+			if (L.Browser.opera)
+				this._container.className += ' leaflet-objects-pane';
+		}
+		tilePane.insertBefore(this._container, first);
+
+		this.setOpacity(this.options.opacity);
+		this.setElementSize(this._container, this._map.getSize());
+	},
+
+	_initMapObject: function() {
+		if (this._yandex) return;
+
+		// Check that ymaps.Map is ready
+		if (ymaps.Map === undefined) {
+			return ymaps.load(['package.map'], this._initMapObject, this);
+		}
+
+		// If traffic layer is requested check if control.TrafficControl is ready
+		if (this.options.traffic)
+			if (ymaps.control === undefined ||
+					ymaps.control.TrafficControl === undefined) {
+				return ymaps.load(['package.traffic', 'package.controls'],
+					this._initMapObject, this);
+			}
+		//Creating ymaps map-object without any default controls on it
+		var map = new ymaps.Map(this._container, { center: [0, 0], zoom: 0, behaviors: [], controls: [] });
+
+		if (this.options.traffic)
+			map.controls.add(new ymaps.control.TrafficControl({shown: true}));
+
+		if (this._type === 'yandex#null') {
+			this._type = new ymaps.MapType('null', []);
+			map.container.getElement().style.background = 'transparent';
+		}
+		map.setType(this._type);
+
+		this._yandex = map;
+		this._update(true);
+		
+		//Reporting that map-object was initialized
+		this.fire('MapObjectInitialized', { mapObject: map });
+	},
+
+	_resetCallback: function(e) {
+		this._reset(e.hard);
+	},
+
+	_reset: function(clearOldContainer) {
+		this._initContainer();
+	},
+
+	_update: function(force) {
+		if (!this._yandex) return;
+		this._resize(force);
+
+		var center = this._map.getCenter();
+		var _center = [center.lat, center.lng];
+		var zoom = this._map.getZoom();
+
+		if (force || this._yandex.getZoom() !== zoom)
+			this._yandex.setZoom(zoom);
+		this._yandex.panTo(_center, {duration: 0, delay: 0});
+	},
+
+	_resize: function(force) {
+		var size = this._map.getSize(), style = this._container.style;
+		if (style.width === size.x + 'px' && style.height === size.y + 'px')
+			if (force !== true) return;
+		this.setElementSize(this._container, size);
+		var b = this._map.getBounds(), sw = b.getSouthWest(), ne = b.getNorthEast();
+		this._yandex.container.fitToViewport();
+	}
+});
+
+/* 
+ * Leaflet Control Search v1.8.3 - 2015-09-03 
+ * 
+ * Copyright 2015 Stefano Cudini 
+ * stefano.cudini@gmail.com 
+ * http://labs.easyblog.it/ 
+ * 
+ * Licensed under the MIT license. 
+ * 
+ * Demo: 
+ * http://labs.easyblog.it/maps/leaflet-search/ 
+ * 
+ * Source: 
+ * git@github.com:stefanocudini/leaflet-search.git 
+ * 
+ */
+(function() {
+
+L.Control.Search = L.Control.extend({
+	includes: L.Mixin.Events,
+	//
+	//	Name					Data passed			   Description
+	//
+	//Managed Events:
+	//	search_locationfound	{latlng, title, layer} fired after moved and show markerLocation
+	//	search_expanded			{}					   fired after control was expanded
+	//  search_collapsed		{}					   fired after control was collapsed
+	//
+	//Public methods:
+	//  setLayer()				L.LayerGroup()         set layer search at runtime
+	//  showAlert()             'Text message'         show alert message
+	//  searchText()			'Text searched'        search text by external code
+	//
+	options: {
+		layer: null,				//layer where search markers(is a L.LayerGroup)				
+		sourceData: null,			//function that fill _recordsCache, passed searching text by first param and callback in second				
+		url: '',					//url for search by ajax request, ex: "search.php?q={s}". Can be function that returns string for dynamic parameter setting
+		jsonpParam: null,			//jsonp param name for search by jsonp service, ex: "callback"
+		//TODO implements uniq option 'sourceData' that recognizes source type: url,array,callback or layer		
+		//TODO implement can do research on multiple sources layers and remote
+		propertyName: 'title',		//property in marker.options(or feature.properties for vector layer) trough filter elements in layer,
+		propertyLoc: 'loc',			//field for remapping location, using array: ['latname','lonname'] for select double fields(ex. ['lat','lon'] )
+		formatData: null,			//callback for reformat all data from source to indexed data object
+		filterData: null,			//callback for filtering data from text searched, params: textSearch, allRecords									// support dotted format: 'prop.subprop.title'
+
+		callTip: null,				//function that return row tip html node(or html string), receive text tooltip in first param
+		container: '',				//container id to insert Search Control		
+		minLength: 1,				//minimal text length for autocomplete
+		initial: true,				//search elements only by initial text
+		casesesitive: false,		//search elements in case sensitive text
+		autoType: true,				//complete input with first suggested result and select this filled-in text.
+		delayType: 400,				//delay while typing for show tooltip
+		tooltipLimit: -1,			//limit max results to show in tooltip. -1 for no limit.
+		tipAutoSubmit: true,		//auto map panTo when click on tooltip
+		autoResize: true,			//autoresize on input change
+		collapsed: true,			//collapse search control at startup
+		autoCollapse: false,		//collapse search control after submit(on button or on tips if enabled tipAutoSubmit)
+		//TODO add option for persist markerLoc after collapse!
+		autoCollapseTime: 1200,		//delay for autoclosing alert and collapse after blur
+		zoom: null,					//zoom after pan to location found, default: map.getZoom()
+		position: 'topleft',
+		textErr: 'Location not found',	//error message
+		textCancel: 'Cancel',		//title in cancel button		
+		textPlaceholder: 'Search...',//placeholder value			
+		animateLocation: true,		//animate a circle over location found
+		circleLocation: true,		//draw a circle in location found
+		markerLocation: false,		//draw a marker in location found
+		markerIcon: new L.Icon.Default()//custom icon for maker location
+		//TODO history: false,		//show latest searches in tooltip		
+	},
+//FIXME option condition problem {autoCollapse: true, markerLocation: true} not show location
+//FIXME option condition problem {autoCollapse: false }
+//
+//TODO important optimization!!! always append data in this._recordsCache
+//  now _recordsCache content is emptied and replaced with new data founded
+//  always appending data on _recordsCache give the possibility of caching ajax, jsonp and layersearch!
+//
+//TODO here insert function that search inputText FIRST in _recordsCache keys and if not find results.. 
+//  run one of callbacks search(sourceData,jsonpUrl or options.layer) and run this.showTooltip
+//
+//TODO change structure of _recordsCache
+//	like this: _recordsCache = {"text-key1": {loc:[lat,lng], ..other attributes.. }, {"text-key2": {loc:[lat,lng]}...}, ...}
+//	in this mode every record can have a free structure of attributes, only 'loc' is required
+	
+	initialize: function(options) {
+		L.Util.setOptions(this, options || {});
+		this._inputMinSize = this.options.textPlaceholder ? this.options.textPlaceholder.length : 10;
+		this._layer = this.options.layer || new L.LayerGroup();
+		this._filterData = this.options.filterData || this._defaultFilterData;
+		this._formatData = this.options.formatData || this._defaultFormatData;
+		this._autoTypeTmp = this.options.autoType;	//useful for disable autoType temporarily in delete/backspace keydown
+		this._countertips = 0;		//number of tips items
+		this._recordsCache = {};	//key,value table! that store locations! format: key,latlng
+		this._curReq = null;
+	},
+
+	onAdd: function (map) {
+		this._map = map;
+		this._container = L.DomUtil.create('div', 'leaflet-control-search');
+		this._input = this._createInput(this.options.textPlaceholder, 'search-input');
+		this._tooltip = this._createTooltip('search-tooltip');
+		this._cancel = this._createCancel(this.options.textCancel, 'search-cancel');
+		this._button = this._createButton(this.options.textPlaceholder, 'search-button');
+		this._alert = this._createAlert('search-alert');
+
+		if(this.options.collapsed===false)
+			this.expand(this.options.collapsed);
+
+		if(this.options.circleLocation || this.options.markerLocation || this.options.markerIcon)
+			this._markerLoc = new L.Control.Search.Marker([0,0], {
+					showCircle: this.options.circleLocation,
+					showMarker: this.options.markerLocation,
+					icon: this.options.markerIcon
+				});//see below
+		
+		this.setLayer( this._layer );
+		 map.on({
+		// 		'layeradd': this._onLayerAddRemove,
+		// 		'layerremove': this._onLayerAddRemove
+		     'resize': this._handleAutoresize
+		 	}, this);
+		return this._container;
+	},
+	addTo: function (map) {
+
+		if(this.options.container) {
+			this._container = this.onAdd(map);
+			this._wrapper = L.DomUtil.get(this.options.container);
+			this._wrapper.style.position = 'relative';
+			this._wrapper.appendChild(this._container);
+		}
+		else
+			L.Control.prototype.addTo.call(this, map);
+
+		return this;
+	},
+
+	onRemove: function(map) {
+		this._recordsCache = {};
+		// map.off({
+		// 		'layeradd': this._onLayerAddRemove,
+		// 		'layerremove': this._onLayerAddRemove
+		// 	}, this);
+	},
+
+	// _onLayerAddRemove: function(e) {
+	// 	//console.info('_onLayerAddRemove');
+	// 	//without this, run setLayer also for each Markers!! to optimize!
+	// 	if(e.layer instanceof L.LayerGroup)
+	// 		if( L.stamp(e.layer) != L.stamp(this._layer) )
+	// 			this.setLayer(e.layer);
+	// },
+
+	_getPath: function(obj, prop) {
+		var parts = prop.split('.'),
+			last = parts.pop(),
+			len = parts.length,
+			cur = parts[0],
+			i = 1;
+
+		if(len > 0)
+			while((obj = obj[cur]) && i < len)
+				cur = parts[i++];
+
+		if(obj)
+			return obj[last];
+	},
+
+	setLayer: function(layer) {	//set search layer at runtime
+		//this.options.layer = layer; //setting this, run only this._recordsFromLayer()
+		this._layer = layer;
+		this._layer.addTo(this._map);
+		if(this._markerLoc)
+			this._layer.addLayer(this._markerLoc);
+		return this;
+	},
+	
+	showAlert: function(text) {
+		text = text || this.options.textErr;
+		this._alert.style.display = 'block';
+		this._alert.innerHTML = text;
+		clearTimeout(this.timerAlert);
+		var that = this;		
+		this.timerAlert = setTimeout(function() {
+			that.hideAlert();
+		},this.options.autoCollapseTime);
+		return this;
+	},
+	
+	hideAlert: function() {
+		this._alert.style.display = 'none';
+		return this;
+	},
+		
+	cancel: function() {
+		this._input.value = '';
+		this._handleKeypress({keyCode:8});//simulate backspace keypress
+		this._input.size = this._inputMinSize;
+		this._input.focus();
+		this._cancel.style.display = 'none';
+		this._hideTooltip();
+		return this;
+	},
+	
+	expand: function(toggle) {
+		toggle = typeof toggle === 'boolean' ? toggle : true;
+		this._input.style.display = 'block';
+		L.DomUtil.addClass(this._container, 'search-exp');
+		if ( toggle !== false ) {
+			this._input.focus();
+			this._map.on('dragstart click', this.collapse, this);
+		}
+		this.fire('search_expanded');
+		return this;	
+	},
+
+	collapse: function() {
+		this._hideTooltip();
+		this.cancel();
+		this._alert.style.display = 'none';
+		this._input.blur();
+		if(this.options.collapsed)
+		{
+			this._input.style.display = 'none';
+			this._cancel.style.display = 'none';			
+			L.DomUtil.removeClass(this._container, 'search-exp');		
+			//this._markerLoc.hide();//maybe unuseful
+			this._map.off('dragstart click', this.collapse, this);
+		}
+		this.fire('search_collapsed');
+		return this;
+	},
+	
+	collapseDelayed: function() {	//collapse after delay, used on_input blur
+		if (!this.options.autoCollapse) return this;
+		var that = this;
+		clearTimeout(this.timerCollapse);
+		this.timerCollapse = setTimeout(function() {
+			that.collapse();
+		}, this.options.autoCollapseTime);
+		return this;		
+	},
+
+	collapseDelayedStop: function() {
+		clearTimeout(this.timerCollapse);
+		return this;		
+	},
+
+////start DOM creations
+	_createAlert: function(className) {
+		var alert = L.DomUtil.create('div', className, this._container);
+		alert.style.display = 'none';
+
+		L.DomEvent
+			.on(alert, 'click', L.DomEvent.stop, this)
+			.on(alert, 'click', this.hideAlert, this);
+
+		return alert;
+	},
+
+	_createInput: function (text, className) {
+		var label = L.DomUtil.create('label', className, this._container);
+		var input = L.DomUtil.create('input', className, this._container);
+		input.type = 'text';
+		input.size = this._inputMinSize;
+		input.value = '';
+		input.autocomplete = 'off';
+		input.autocorrect = 'off';
+		input.autocapitalize = 'off';
+		input.placeholder = text;
+		input.style.display = 'none';
+		input.role = 'search';
+		input.id = input.role + input.type + input.size;
+		
+		label.htmlFor = input.id;
+		label.style.display = 'none';
+		label.value = text;
+		
+		L.DomEvent
+			.disableClickPropagation(input)
+			.on(input, 'keyup', this._handleKeypress, this)
+			.on(input, 'keydown', this._handleAutoresize, this)
+			.on(input, 'blur', this.collapseDelayed, this)
+			.on(input, 'focus', this.collapseDelayedStop, this);
+		
+		return input;
+	},
+
+	_createCancel: function (title, className) {
+		var cancel = L.DomUtil.create('a', className, this._container);
+		cancel.href = '#';
+		cancel.title = title;
+		cancel.style.display = 'none';
+		cancel.innerHTML = "<span>&otimes;</span>";//imageless(see css)
+
+		L.DomEvent
+			.on(cancel, 'click', L.DomEvent.stop, this)
+			.on(cancel, 'click', this.cancel, this);
+
+		return cancel;
+	},
+	
+	_createButton: function (title, className) {
+		var button = L.DomUtil.create('a', className, this._container);
+		button.href = '#';
+		button.title = title;
+
+		L.DomEvent
+			.on(button, 'click', L.DomEvent.stop, this)
+			.on(button, 'click', this._handleSubmit, this)			
+			.on(button, 'focus', this.collapseDelayedStop, this)
+			.on(button, 'blur', this.collapseDelayed, this);
+
+		return button;
+	},
+
+	_createTooltip: function(className) {
+		var tool = L.DomUtil.create('ul', className, this._container);
+		tool.style.display = 'none';
+
+		var that = this;
+		L.DomEvent
+			.disableClickPropagation(tool)
+			.on(tool, 'blur', this.collapseDelayed, this)
+			.on(tool, 'mousewheel', function(e) {
+				that.collapseDelayedStop();
+				L.DomEvent.stopPropagation(e);//disable zoom map
+			}, this)
+			.on(tool, 'mouseover', function(e) {
+				that.collapseDelayedStop();
+			}, this);
+		return tool;
+	},
+
+	_createTip: function(text, val) {//val is object in recordCache, usually is Latlng
+		var tip;
+		
+		if(this.options.callTip)
+		{
+			tip = this.options.callTip(text,val); //custom tip node or html string
+			if(typeof tip === 'string')
+			{
+				var tmpNode = L.DomUtil.create('div');
+				tmpNode.innerHTML = tip;
+				tip = tmpNode.firstChild;
+			}
+		}
+		else
+		{
+			tip = L.DomUtil.create('li', '');
+			tip.innerHTML = text;
+		}
+		
+		L.DomUtil.addClass(tip, 'search-tip');
+		tip._text = text; //value replaced in this._input and used by _autoType
+
+		L.DomEvent
+			.disableClickPropagation(tip)		
+			.on(tip, 'click', L.DomEvent.stop, this)
+			.on(tip, 'click', function(e) {
+				this._input.value = text;
+				this._handleAutoresize();
+				this._input.focus();
+				this._hideTooltip();	
+				if(this.options.tipAutoSubmit)//go to location at once
+					this._handleSubmit();
+			}, this);
+
+		return tip;
+	},
+
+//////end DOM creations
+
+	_getUrl: function(text) {
+		return (typeof this.options.url === 'function') ? this.options.url(text) : this.options.url;
+	},
+
+	_defaultFilterData: function(text, records) {
+	
+		var regFilter = new RegExp("^[.]$|[\[\]|()*]",'g'),	//remove . * | ( ) ] [
+			I, regSearch,
+			frecords = {};
+
+		text = text.replace(regFilter,'');	  //sanitize text
+		I = this.options.initial ? '^' : '';  //search only initial text
+
+		regSearch = new RegExp(I + text, !this.options.casesesitive ? 'i' : undefined);
+
+		//TODO use .filter or .map
+		for(var key in records)
+			if( regSearch.test(key) )
+				frecords[key]= records[key];
+		
+		return frecords;
+	},
+
+	showTooltip: function(records) {
+		var tip;
+
+		this._countertips = 0;
+				
+		this._tooltip.innerHTML = '';
+		this._tooltip.currentSelection = -1;  //inizialized for _handleArrowSelect()
+
+		for(var key in records)//fill tooltip
+		{
+			if(++this._countertips == this.options.tooltipLimit) break;
+
+			tip = this._createTip(key, records[key] );
+
+			this._tooltip.appendChild(tip);
+		}
+		
+		if(this._countertips > 0)
+		{
+			this._tooltip.style.display = 'block';
+			if(this._autoTypeTmp)
+				this._autoType();
+			this._autoTypeTmp = this.options.autoType;//reset default value
+		}
+		else
+			this._hideTooltip();
+
+		this._tooltip.scrollTop = 0;
+		return this._countertips;
+	},
+
+	_hideTooltip: function() {
+		this._tooltip.style.display = 'none';
+		this._tooltip.innerHTML = '';
+		return 0;
+	},
+
+	_defaultFormatData: function(json) {	//default callback for format data to indexed data
+		var propName = this.options.propertyName,
+			propLoc = this.options.propertyLoc,
+			i, jsonret = {};
+
+		if( L.Util.isArray(propLoc) )
+			for(i in json)
+				jsonret[ this._getPath(json[i],propName) ]= L.latLng( json[i][ propLoc[0] ], json[i][ propLoc[1] ] );
+		else
+			for(i in json)
+				jsonret[ this._getPath(json[i],propName) ]= L.latLng( this._getPath(json[i],propLoc) );
+		//TODO throw new Error("propertyName '"+propName+"' not found in JSON data");
+		return jsonret;
+	},
+
+	_recordsFromJsonp: function(text, callAfter) {  //extract searched records from remote jsonp service
+		L.Control.Search.callJsonp = callAfter;
+		var script = L.DomUtil.create('script','leaflet-search-jsonp', document.getElementsByTagName('body')[0] ),			
+			url = L.Util.template(this._getUrl(text)+'&'+this.options.jsonpParam+'=L.Control.Search.callJsonp', {s: text}); //parsing url
+			//rnd = '&_='+Math.floor(Math.random()*10000);
+			//TODO add rnd param or randomize callback name! in recordsFromJsonp
+		script.type = 'text/javascript';
+		script.src = url;
+		return { abort: function() { script.parentNode.removeChild(script); } };
+	},
+
+	_recordsFromAjax: function(text, callAfter) {	//Ajax request
+		if (window.XMLHttpRequest === undefined) {
+			window.XMLHttpRequest = function() {
+				try { return new ActiveXObject("Microsoft.XMLHTTP.6.0"); }
+				catch  (e1) {
+					try { return new ActiveXObject("Microsoft.XMLHTTP.3.0"); }
+					catch (e2) { throw new Error("XMLHttpRequest is not supported"); }
+				}
+			};
+		}
+		var IE8or9 = ( L.Browser.ie && !window.atob && document.querySelector ),
+			request = IE8or9 ? new XDomainRequest() : new XMLHttpRequest(),
+			url = L.Util.template(this._getUrl(text), {s: text});
+
+		//rnd = '&_='+Math.floor(Math.random()*10000);
+		//TODO add rnd param or randomize callback name! in recordsFromAjax			
+		
+		request.open("GET", url);
+		var that = this;
+
+		request.onload = function() {
+			callAfter( JSON.parse(request.responseText) );
+		};
+		request.onreadystatechange = function() {
+		    if(request.readyState === 4 && request.status === 200) {
+		    	this.onload();
+		    }
+		};
+
+		request.send();
+		return request;   
+	},
+	
+	_recordsFromLayer: function() {	//return table: key,value from layer
+		var that = this,
+			retRecords = {},
+			propName = this.options.propertyName,
+			loc;
+		
+		this._layer.eachLayer(function(layer) {
+
+			if(layer instanceof L.Control.Search.Marker) return;
+
+			if(layer instanceof L.Marker || layer instanceof L.CircleMarker)
+			{
+				if(that._getPath(layer.options,propName))
+				{
+					loc = layer.getLatLng();
+					loc.layer = layer;
+					retRecords[ that._getPath(layer.options,propName) ] = loc;			
+					
+				}
+				else if(that._getPath(layer.feature.properties,propName)){
+
+					loc = layer.getLatLng();
+					loc.layer = layer;
+					retRecords[ that._getPath(layer.feature.properties,propName) ] = loc;
+					
+				}
+				else
+					throw new Error("propertyName '"+propName+"' not found in marker");
+			}
+            else if(layer.hasOwnProperty('feature'))//GeoJSON
+			{
+				if(layer.feature.properties.hasOwnProperty(propName))
+				{
+					loc = layer.getBounds().getCenter();
+					loc.layer = layer;			
+					retRecords[ layer.feature.properties[propName] ] = loc;
+				}
+				else
+					throw new Error("propertyName '"+propName+"' not found in feature");
+			}
+			else if(layer instanceof L.LayerGroup)
+            {
+                //TODO: Optimize
+                layer.eachLayer(function(m) {
+                    loc = m.getLatLng();
+                    loc.layer = m;
+                    retRecords[ m.feature.properties[propName] ] = loc;
+                });
+            }
+			
+		},this);
+		
+		return retRecords;
+	},
+
+	_autoType: function() {
+		
+		//TODO implements autype without selection(useful for mobile device)
+		
+		var start = this._input.value.length,
+			firstRecord = this._tooltip.firstChild._text,
+			end = firstRecord.length;
+
+		if (firstRecord.indexOf(this._input.value) === 0) { // If prefix match
+			this._input.value = firstRecord;
+			this._handleAutoresize();
+
+			if (this._input.createTextRange) {
+				var selRange = this._input.createTextRange();
+				selRange.collapse(true);
+				selRange.moveStart('character', start);
+				selRange.moveEnd('character', end);
+				selRange.select();
+			}
+			else if(this._input.setSelectionRange) {
+				this._input.setSelectionRange(start, end);
+			}
+			else if(this._input.selectionStart) {
+				this._input.selectionStart = start;
+				this._input.selectionEnd = end;
+			}
+		}
+	},
+
+	_hideAutoType: function() {	// deselect text:
+
+		var sel;
+		if ((sel = this._input.selection) && sel.empty) {
+			sel.empty();
+		}
+		else if (this._input.createTextRange) {
+			sel = this._input.createTextRange();
+			sel.collapse(true);
+			var end = this._input.value.length;
+			sel.moveStart('character', end);
+			sel.moveEnd('character', end);
+			sel.select();
+		}
+		else {
+			if (this._input.getSelection) {
+				this._input.getSelection().removeAllRanges();
+			}
+			this._input.selectionStart = this._input.selectionEnd;
+		}
+	},
+	
+	_handleKeypress: function (e) {	//run _input keyup event
+		
+		switch(e.keyCode)
+		{
+			case 27: //Esc
+				this.collapse();
+			break;
+			case 13: //Enter
+				if(this._countertips == 1)
+					this._handleArrowSelect(1);
+				this._handleSubmit();	//do search
+			break;
+			case 38://Up
+				this._handleArrowSelect(-1);
+			break;
+			case 40://Down
+				this._handleArrowSelect(1);
+			break;
+			case 37://Left
+			case 39://Right
+			case 16://Shift
+			case 17://Ctrl
+			//case 32://Space
+			break;
+			case 8://backspace
+			case 46://delete
+				this._autoTypeTmp = false;//disable temporarily autoType
+			break;
+			default://All keys
+
+				if(this._input.value.length)
+					this._cancel.style.display = 'block';
+				else
+					this._cancel.style.display = 'none';
+
+				if(this._input.value.length >= this.options.minLength)
+				{
+					var that = this;
+
+					clearTimeout(this.timerKeypress);	//cancel last search request while type in				
+					this.timerKeypress = setTimeout(function() {	//delay before request, for limit jsonp/ajax request
+
+						that._fillRecordsCache();
+					
+					}, this.options.delayType);
+				}
+				else
+					this._hideTooltip();
+		}
+	},
+
+	searchText: function(text) {
+		var code = text.charCodeAt(text.length);
+
+		this._input.value = text;
+
+		this._input.style.display = 'block';
+		L.DomUtil.addClass(this._container, 'search-exp');
+
+		this._autoTypeTmp = false;
+
+		this._handleKeypress({keyCode: code});
+	},
+	
+	_fillRecordsCache: function() {
+//TODO important optimization!!! always append data in this._recordsCache
+//  now _recordsCache content is emptied and replaced with new data founded
+//  always appending data on _recordsCache give the possibility of caching ajax, jsonp and layersearch!
+//
+//TODO here insert function that search inputText FIRST in _recordsCache keys and if not find results.. 
+//  run one of callbacks search(sourceData,jsonpUrl or options.layer) and run this.showTooltip
+//
+//TODO change structure of _recordsCache
+//	like this: _recordsCache = {"text-key1": {loc:[lat,lng], ..other attributes.. }, {"text-key2": {loc:[lat,lng]}...}, ...}
+//	in this way every record can have a free structure of attributes, only 'loc' is required
+	
+		var inputText = this._input.value,
+			that = this, records;
+
+		if(this._curReq && this._curReq.abort)
+			this._curReq.abort();
+		//abort previous requests
+
+		L.DomUtil.addClass(this._container, 'search-load');	
+
+		if(this.options.layer)
+		{
+			//TODO _recordsFromLayer must return array of objects, formatted from _formatData
+			this._recordsCache = this._recordsFromLayer();
+			
+			records = this._filterData( this._input.value, this._recordsCache );
+
+			this.showTooltip( records );
+
+			L.DomUtil.removeClass(this._container, 'search-load');
+		}
+		else
+		{
+			if(this.options.sourceData)
+				this._retrieveData = this.options.sourceData;
+
+			else if(this.options.url)	//jsonp or ajax
+				this._retrieveData = this.options.jsonpParam ? this._recordsFromJsonp : this._recordsFromAjax;
+
+			this._curReq = this._retrieveData.call(this, inputText, function(data) {
+				
+				that._recordsCache = that._formatData(data);
+
+				//TODO refact!
+				if(that.options.sourceData)
+					records = that._filterData( that._input.value, that._recordsCache );
+				else
+					records = that._recordsCache;
+
+				that.showTooltip( records );
+ 
+				L.DomUtil.removeClass(that._container, 'search-load');
+			});
+		}
+	},
+	
+	_handleAutoresize: function() {	//autoresize this._input
+	    //TODO refact _handleAutoresize now is not accurate
+	    if (this._input.style.maxWidth != this._map._container.offsetWidth) //If maxWidth isn't the same as when first set, reset to current Map width
+	        this._input.style.maxWidth = L.DomUtil.getStyle(this._map._container, 'width');
+
+		if(this.options.autoResize && (this._container.offsetWidth + 45 < this._map._container.offsetWidth))
+			this._input.size = this._input.value.length<this._inputMinSize ? this._inputMinSize : this._input.value.length;
+	},
+
+	_handleArrowSelect: function(velocity) {
+	
+		var searchTips = this._tooltip.hasChildNodes() ? this._tooltip.childNodes : [];
+			
+		for (i=0; i<searchTips.length; i++)
+			L.DomUtil.removeClass(searchTips[i], 'search-tip-select');
+		
+		if ((velocity == 1 ) && (this._tooltip.currentSelection >= (searchTips.length - 1))) {// If at end of list.
+			L.DomUtil.addClass(searchTips[this._tooltip.currentSelection], 'search-tip-select');
+		}
+		else if ((velocity == -1 ) && (this._tooltip.currentSelection <= 0)) { // Going back up to the search box.
+			this._tooltip.currentSelection = -1;
+		}
+		else if (this._tooltip.style.display != 'none') {
+			this._tooltip.currentSelection += velocity;
+			
+			L.DomUtil.addClass(searchTips[this._tooltip.currentSelection], 'search-tip-select');
+			
+			this._input.value = searchTips[this._tooltip.currentSelection]._text;
+
+			// scroll:
+			var tipOffsetTop = searchTips[this._tooltip.currentSelection].offsetTop;
+			
+			if (tipOffsetTop + searchTips[this._tooltip.currentSelection].clientHeight >= this._tooltip.scrollTop + this._tooltip.clientHeight) {
+				this._tooltip.scrollTop = tipOffsetTop - this._tooltip.clientHeight + searchTips[this._tooltip.currentSelection].clientHeight;
+			}
+			else if (tipOffsetTop <= this._tooltip.scrollTop) {
+				this._tooltip.scrollTop = tipOffsetTop;
+			}
+		}
+	},
+
+	_handleSubmit: function() {	//button and tooltip click and enter submit
+
+		this._hideAutoType();
+		
+		this.hideAlert();
+		this._hideTooltip();
+
+		if(this._input.style.display == 'none')	//on first click show _input only
+			this.expand();
+		else
+		{
+			if(this._input.value === '')	//hide _input only
+				this.collapse();
+			else
+			{
+				var loc = this._getLocation(this._input.value);
+				
+				if(loc===false)
+					this.showAlert();
+				else
+				{
+					this.showLocation(loc, this._input.value);
+					this.fire('search_locationfound', {
+							latlng: loc,
+							text: this._input.value,
+							layer: loc.layer ? loc.layer : null
+						});
+				}
+				//this.collapse();
+				//FIXME if collapse in _handleSubmit hide _markerLoc!
+			}
+		}
+	},
+
+	_getLocation: function(key) {	//extract latlng from _recordsCache
+
+		if( this._recordsCache.hasOwnProperty(key) )
+			return this._recordsCache[key];//then after use .loc attribute
+		else
+			return false;
+	},
+
+	showLocation: function(latlng, title) {	//set location on map from _recordsCache
+			
+		if(this.options.zoom)
+			this._map.setView(latlng, this.options.zoom);
+		else
+			this._map.panTo(latlng);
+
+		if(this._markerLoc)
+		{
+			this._markerLoc.setLatLng(latlng);  //show circle/marker in location found
+			this._markerLoc.setTitle(title);
+			this._markerLoc.show();
+			if(this.options.animateLocation)
+				this._markerLoc.animate();
+			//TODO showLocation: start animation after setView or panTo, maybe with map.on('moveend')...	
+		}
+		
+		//FIXME autoCollapse option hide this._markerLoc before that visualized!!
+		if(this.options.autoCollapse)
+			this.collapse();
+		return this;
+	}
+});
+
+L.Control.Search.Marker = L.Marker.extend({
+
+	includes: L.Mixin.Events,
+	
+	options: {
+		radius: 10,
+		weight: 3,
+		color: '#e03',
+		stroke: true,
+		fill: false,
+		title: '',
+		icon: new L.Icon.Default(),
+		showCircle: true,
+		showMarker: false	//show icon optional, show only circleLoc
+	},
+	
+	initialize: function (latlng, options) {
+		L.setOptions(this, options);
+		L.Marker.prototype.initialize.call(this, latlng, options);
+		if(this.options.showCircle)
+			this._circleLoc =  new L.CircleMarker(latlng, this.options);
+	},
+
+	onAdd: function (map) {
+		L.Marker.prototype.onAdd.call(this, map);
+		if(this._circleLoc)
+			map.addLayer(this._circleLoc);
+		this.hide();
+	},
+
+	onRemove: function (map) {
+		L.Marker.prototype.onRemove.call(this, map);
+		if(this._circleLoc)
+			map.removeLayer(this._circleLoc);
+	},	
+	
+	setLatLng: function (latlng) {
+		L.Marker.prototype.setLatLng.call(this, latlng);
+		if(this._circleLoc)
+			this._circleLoc.setLatLng(latlng);
+		return this;
+	},
+	
+	setTitle: function(title) {
+		title = title || '';
+		this.options.title = title;
+		if(this._icon)
+			this._icon.title = title;
+		return this;
+	},
+
+	show: function() {
+		if(this.options.showMarker)
+		{
+			if(this._icon)
+				this._icon.style.display = 'block';
+			if(this._shadow)
+				this._shadow.style.display = 'block';
+			//this._bringToFront();
+		}
+		if(this._circleLoc)
+		{
+			this._circleLoc.setStyle({fill: this.options.fill, stroke: this.options.stroke});
+			//this._circleLoc.bringToFront();
+		}
+		return this;
+	},
+
+	hide: function() {
+		if(this._icon)
+			this._icon.style.display = 'none';
+		if(this._shadow)
+			this._shadow.style.display = 'none';
+		if(this._circleLoc)			
+			this._circleLoc.setStyle({fill: false, stroke: false});
+		return this;
+	},
+
+	animate: function() {
+	//TODO refact animate() more smooth! like this: http://goo.gl/DDlRs
+		if(this._circleLoc)
+		{
+			var circle = this._circleLoc,
+				tInt = 200,	//time interval
+				ss = 10,	//frames
+				mr = parseInt(circle._radius/ss),
+				oldrad = this.options.radius,
+				newrad = circle._radius * 2.5,
+				acc = 0;
+
+			circle._timerAnimLoc = setInterval(function() {
+				acc += 0.5;
+				mr += acc;	//adding acceleration
+				newrad -= mr;
+				
+				circle.setRadius(newrad);
+
+				if(newrad<oldrad)
+				{
+					clearInterval(circle._timerAnimLoc);
+					circle.setRadius(oldrad);//reset radius
+					//if(typeof afterAnimCall == 'function')
+						//afterAnimCall();
+						//TODO use create event 'animateEnd' in L.Control.Search.Marker 
+				}
+			}, tInt);
+		}
+		
+		return this;
+	}
+});
+
+L.Map.addInitHook(function () {
+    if (this.options.searchControl) {
+        this.searchControl = L.control.search(this.options.searchControl);
+        this.addControl(this.searchControl);
+    }
+});
+
+L.control.search = function (options) {
+    return new L.Control.Search(options);
+};
+
+}).call(this);
+
+
 L.Control.Sidebar = L.Control.extend({
 
     includes: L.Mixin.Events,
@@ -6221,3 +9748,3355 @@ L.toolbarAction = function toolbarAction(options) {
 L.ToolbarAction.extendOptions = function(options) {
 	return this.extend({ options: options });
 };
+
+L.Editable = L.Class.extend({
+
+    includes: [L.Mixin.Events],
+
+    statics: {
+        FORWARD: 1,
+        BACKWARD: -1
+    },
+
+    options: {
+        zIndex: 1000,
+        polygonClass: L.Polygon,
+        polylineClass: L.Polyline,
+        markerClass: L.Marker,
+        drawingCSSClass: 'leaflet-editable-drawing'
+    },
+
+    initialize: function (map, options) {
+        L.setOptions(this, options);
+        this._lastZIndex = this.options.zIndex;
+        this.map = map;
+        this.editLayer = this.createEditLayer();
+        this.featuresLayer = this.createFeaturesLayer();
+        this.newClickHandler = this.createNewClickHandler();
+        this.forwardLineGuide = this.createLineGuide();
+        this.backwardLineGuide = this.createLineGuide();
+    },
+
+    fireAndForward: function (type, e) {
+        e = e || {};
+        e.editTools = this;
+        this.fire(type, e);
+        this.map.fire(type, e);
+    },
+
+    createLineGuide: function () {
+        var options = L.extend({dashArray: '5,10', weight: 1}, this.options.lineGuideOptions);
+        return L.polyline([], options);
+    },
+
+    createVertexIcon: function (options) {
+        return L.Browser.touch ? new L.Editable.TouchVertexIcon(options) : new L.Editable.VertexIcon(options);
+    },
+
+    createNewClickHandler: function () {
+        return L.marker(this.map.getCenter(), {
+            icon: this.createVertexIcon({className: 'leaflet-div-icon leaflet-drawing-icon'}),
+            opacity: 0,
+            zIndexOffset: this._lastZIndex
+        });
+    },
+
+    createEditLayer: function () {
+        return this.options.editLayer || new L.LayerGroup().addTo(this.map);
+    },
+
+    createFeaturesLayer: function () {
+        return this.options.featuresLayer || new L.LayerGroup().addTo(this.map);
+    },
+
+    moveForwardLineGuide: function (latlng) {
+        if (this.forwardLineGuide._latlngs.length) {
+            this.forwardLineGuide._latlngs[1] = latlng;
+            this.forwardLineGuide.redraw();
+        }
+    },
+
+    moveBackwardLineGuide: function (latlng) {
+        if (this.backwardLineGuide._latlngs.length) {
+            this.backwardLineGuide._latlngs[1] = latlng;
+            this.backwardLineGuide.redraw();
+        }
+    },
+
+    anchorForwardLineGuide: function (latlng) {
+        this.forwardLineGuide._latlngs[0] = latlng;
+        this.forwardLineGuide.redraw();
+    },
+
+    anchorBackwardLineGuide: function (latlng) {
+        this.backwardLineGuide._latlngs[0] = latlng;
+        this.backwardLineGuide.redraw();
+    },
+
+    attachForwardLineGuide: function () {
+        this.editLayer.addLayer(this.forwardLineGuide);
+    },
+
+    attachBackwardLineGuide: function () {
+        this.editLayer.addLayer(this.backwardLineGuide);
+    },
+
+    detachForwardLineGuide: function () {
+        this.forwardLineGuide._latlngs = [];
+        this.editLayer.removeLayer(this.forwardLineGuide);
+    },
+
+    detachBackwardLineGuide: function () {
+        this.backwardLineGuide._latlngs = [];
+        this.editLayer.removeLayer(this.backwardLineGuide);
+    },
+
+    updateNewClickHandlerZIndex: function () {
+        this._lastZIndex += 2;
+        this.newClickHandler.setZIndexOffset(this._lastZIndex);
+    },
+
+    registerForDrawing: function (editor) {
+        this.map.on('mousemove touchmove', editor.onMouseMove, editor);
+        if (this._drawingEditor) this.unregisterForDrawing(this._drawingEditor);
+        this._drawingEditor = editor;
+        this.editLayer.addLayer(this.newClickHandler);
+        this.newClickHandler.on('click', editor.onNewClickHandlerClicked, editor);
+        if (L.Browser.touch) this.map.on('click', editor.onTouch, editor);
+        L.DomUtil.addClass(this.map._container, this.options.drawingCSSClass);
+        this.updateNewClickHandlerZIndex();
+    },
+
+    unregisterForDrawing: function (editor) {
+        editor = editor || this._drawingEditor;
+        this.editLayer.removeLayer(this.newClickHandler);
+        if (!editor) return;
+        this.map.off('mousemove touchmove', editor.onMouseMove, editor);
+        this.newClickHandler.off('click', editor.onNewClickHandlerClicked, editor);
+        if (L.Browser.touch) this.map.off('click', editor.onTouch, editor);
+        if (editor !== this._drawingEditor) return;
+        delete this._drawingEditor;
+        if (editor.drawing) editor.cancelDrawing();
+        L.DomUtil.removeClass(this.map._container, this.options.drawingCSSClass);
+    },
+
+    stopDrawing: function () {
+        this.unregisterForDrawing();
+    },
+
+    connectCreatedToMap: function (layer) {
+        return this.featuresLayer.addLayer(layer);
+    },
+
+    startPolyline: function (latlng) {
+        var line = this.createPolyline([]);
+        this.connectCreatedToMap(line);
+        var editor = line.enableEdit();
+        editor.startDrawingForward();
+        if (latlng) editor.newPointForward(latlng);
+        return line;
+    },
+
+    startPolygon: function (latlng) {
+        var polygon = this.createPolygon([]);
+        this.connectCreatedToMap(polygon);
+        var editor = polygon.enableEdit();
+        editor.startDrawingForward();
+        if (latlng) editor.newPointForward(latlng);
+        return polygon;
+    },
+
+    startMarker: function (latlng) {
+        latlng = latlng || this.map.getCenter();
+        var marker = this.createMarker(latlng);
+        this.connectCreatedToMap(marker);
+        var editor = marker.enableEdit();
+        editor.startDrawing();
+        return marker;
+    },
+
+    startHole: function (editor, latlng) {
+        editor.newHole(latlng);
+    },
+
+    extendMultiPolygon: function (multi) {
+        var polygon = this.createPolygon([]);
+        multi.addLayer(polygon);
+        polygon.multi = multi;
+        var editor = polygon.enableEdit();
+        editor.startDrawingForward();
+        return polygon;
+    },
+
+    createPolyline: function (latlngs) {
+        var line = new this.options.polylineClass(latlngs, {editOptions: {editTools: this}});
+        this.fireAndForward('editable:created', {layer: line});
+        return line;
+    },
+
+    createPolygon: function (latlngs) {
+        var polygon = new this.options.polygonClass(latlngs, {editOptions: {editTools: this}});
+        this.fireAndForward('editable:created', {layer: polygon});
+        return polygon;
+    },
+
+    createMarker: function (latlng) {
+        var marker = new this.options.markerClass(latlng, {editOptions: {editTools: this}});
+        this.fireAndForward('editable:created', {layer: marker});
+        return marker;
+    }
+
+});
+
+L.Map.addInitHook(function () {
+
+    this.whenReady(function () {
+        if (this.options.editable) {
+            this.editTools = new L.Editable(this, this.options.editOptions);
+        }
+    });
+
+});
+
+L.Editable.VertexIcon = L.DivIcon.extend({
+
+    options: {
+        iconSize: new L.Point(8, 8)
+    }
+
+});
+
+L.Editable.TouchVertexIcon = L.Editable.VertexIcon.extend({
+
+    options: {
+        iconSize: new L.Point(20, 20)
+    }
+
+});
+
+
+L.Editable.VertexMarker = L.Marker.extend({
+
+    options: {
+        draggable: true,
+        className: 'leaflet-div-icon leaflet-vertex-icon'
+    },
+
+    initialize: function (latlng, latlngs, editor, options) {
+        this.latlng = latlng;
+        this.latlngs = latlngs;
+        this.editor = editor;
+        L.Marker.prototype.initialize.call(this, latlng, options);
+        this.options.icon = this.editor.tools.createVertexIcon({className: this.options.className});
+        this.latlng.__vertex = this;
+        this.editor.editLayer.addLayer(this);
+        this.setZIndexOffset(editor.tools._lastZIndex + 1);
+    },
+
+    onAdd: function (map) {
+        L.Marker.prototype.onAdd.call(this, map);
+        this.on('drag', this.onDrag);
+        this.on('dragstart', this.onDragStart);
+        this.on('dragend', this.onDragEnd);
+        this.on('click', this.onClick);
+        this.on('contextmenu', this.onContextMenu);
+        this.on('mousedown touchstart', this.onMouseDown);
+        this.addMiddleMarkers();
+    },
+
+    onRemove: function (map) {
+        if (this.middleMarker) this.middleMarker.delete();
+        delete this.latlng.__vertex;
+        this.off('drag', this.onDrag);
+        this.off('dragstart', this.onDragStart);
+        this.off('dragend', this.onDragEnd);
+        this.off('click', this.onClick);
+        this.off('contextmenu', this.onContextMenu);
+        this.off('mousedown touchstart', this.onMouseDown);
+        L.Marker.prototype.onRemove.call(this, map);
+    },
+
+    onDrag: function (e) {
+        e.vertex = this;
+        this.editor.onVertexMarkerDrag(e);
+        var iconPos = L.DomUtil.getPosition(this._icon),
+            latlng = this._map.layerPointToLatLng(iconPos);
+        this.latlng.lat = latlng.lat;
+        this.latlng.lng = latlng.lng;
+        this.editor.refresh();
+        if (this.middleMarker) {
+            this.middleMarker.updateLatLng();
+        }
+        var next = this.getNext();
+        if (next && next.middleMarker) {
+            next.middleMarker.updateLatLng();
+        }
+    },
+
+    onDragStart: function (e) {
+        e.vertex = this;
+        this.editor.onVertexMarkerDragStart(e);
+    },
+
+    onDragEnd: function (e) {
+        e.vertex = this;
+        this.editor.onVertexMarkerDragEnd(e);
+    },
+
+    onClick: function (e) {
+        e.vertex = this;
+        this.editor.onVertexMarkerClick(e);
+    },
+
+    onContextMenu: function (e) {
+        e.vertex = this;
+        this.editor.onVertexMarkerContextMenu(e);
+    },
+
+    onMouseDown: function (e) {
+        e.vertex = this;
+        this.editor.onVertexMarkerMouseDown(e);
+    },
+
+    delete: function () {
+        var next = this.getNext();  // Compute before changing latlng
+        this.latlngs.splice(this.latlngs.indexOf(this.latlng), 1);
+        this.editor.editLayer.removeLayer(this);
+        this.editor.onVertexDeleted({latlng: this.latlng, vertex: this});
+        if (next) next.resetMiddleMarker();
+    },
+
+    getIndex: function () {
+        return this.latlngs.indexOf(this.latlng);
+    },
+
+    getLastIndex: function () {
+        return this.latlngs.length - 1;
+    },
+
+    getPrevious: function () {
+        if (this.latlngs.length < 2) return;
+        var index = this.getIndex(),
+            previousIndex = index - 1;
+        if (index === 0 && this.editor.CLOSED) previousIndex = this.getLastIndex();
+        var previous = this.latlngs[previousIndex];
+        if (previous) return previous.__vertex;
+    },
+
+    getNext: function () {
+        if (this.latlngs.length < 2) return;
+        var index = this.getIndex(),
+            nextIndex = index + 1;
+        if (index === this.getLastIndex() && this.editor.CLOSED) nextIndex = 0;
+        var next = this.latlngs[nextIndex];
+        if (next) return next.__vertex;
+    },
+
+    addMiddleMarker: function (previous) {
+        previous = previous || this.getPrevious();
+        if (previous && !this.middleMarker) this.middleMarker = this.editor.addMiddleMarker(previous, this, this.latlngs, this.editor);
+    },
+
+    addMiddleMarkers: function () {
+        if (this.editor.tools.options.skipMiddleMarkers) return;
+        var previous = this.getPrevious();
+        if (previous) {
+            this.addMiddleMarker(previous);
+        }
+        var next = this.getNext();
+        if (next) {
+            next.resetMiddleMarker();
+        }
+    },
+
+    resetMiddleMarker: function () {
+        if (this.middleMarker) this.middleMarker.delete();
+        this.addMiddleMarker();
+    },
+
+    _initInteraction: function () {
+        L.Marker.prototype._initInteraction.call(this);
+        L.DomEvent.on(this._icon, 'touchstart', function (e) {this._fireMouseEvent(e);}, this);
+    }
+
+});
+
+L.Editable.mergeOptions({
+    vertexMarkerClass: L.Editable.VertexMarker
+});
+
+L.Editable.MiddleMarker = L.Marker.extend({
+
+    options: {
+        opacity: 0.5,
+        className: 'leaflet-div-icon leaflet-middle-icon'
+    },
+
+    initialize: function (left, right, latlngs, editor, options) {
+        this.left = left;
+        this.right = right;
+        this.editor = editor;
+        this.latlngs = latlngs;
+        L.Marker.prototype.initialize.call(this, this.computeLatLng(), options);
+        this._opacity = this.options.opacity;
+        this.options.icon = this.editor.tools.createVertexIcon({className: this.options.className});
+        this.editor.editLayer.addLayer(this);
+        this.setVisibility();
+    },
+
+    setVisibility: function () {
+        var leftPoint = this._map.latLngToContainerPoint(this.left.latlng),
+            rightPoint = this._map.latLngToContainerPoint(this.right.latlng),
+            size = L.point(this.options.icon.options.iconSize);
+        if (leftPoint.distanceTo(rightPoint) < size.x * 3) {
+            this.hide();
+        } else {
+            this.show();
+        }
+    },
+
+    show: function () {
+        this.setOpacity(this._opacity);
+    },
+
+    hide: function () {
+        this.setOpacity(0);
+    },
+
+    updateLatLng: function () {
+        this.setLatLng(this.computeLatLng());
+        this.setVisibility();
+    },
+
+    computeLatLng: function () {
+        var leftPoint = this.editor.map.latLngToContainerPoint(this.left.latlng),
+            rightPoint = this.editor.map.latLngToContainerPoint(this.right.latlng),
+            y = (leftPoint.y + rightPoint.y) / 2,
+            x = (leftPoint.x + rightPoint.x) / 2;
+        return this.editor.map.containerPointToLatLng([x, y]);
+    },
+
+    onAdd: function (map) {
+        L.Marker.prototype.onAdd.call(this, map);
+        this.on('mousedown touchstart', this.onMouseDown);
+        map.on('zoomend', this.setVisibility, this);
+    },
+
+    onRemove: function (map) {
+        delete this.right.middleMarker;
+        this.off('mousedown touchstart', this.onMouseDown);
+        map.off('zoomend', this.setVisibility, this);
+        L.Marker.prototype.onRemove.call(this, map);
+    },
+
+    onMouseDown: function (e) {
+        this.editor.onMiddleMarkerMouseDown(e, this);
+        this.latlngs.splice(this.index(), 0, e.latlng);
+        this.editor.refresh();
+        var marker = this.editor.addVertexMarker(e.latlng, this.latlngs);
+        marker.dragging._draggable._onDown(e.originalEvent);  // Transfer ongoing dragging to real marker
+        this.delete();
+    },
+
+    delete: function () {
+        this.editor.editLayer.removeLayer(this);
+    },
+
+    index: function () {
+        return this.latlngs.indexOf(this.right.latlng);
+    },
+
+    _initInteraction: function () {
+        L.Marker.prototype._initInteraction.call(this);
+        L.DomEvent.on(this._icon, 'touchstart', function (e) {this._fireMouseEvent(e);}, this);
+    }
+
+});
+
+L.Editable.mergeOptions({
+    middleMarkerClass: L.Editable.MiddleMarker
+});
+
+L.Editable.BaseEditor = L.Class.extend({
+
+    initialize: function (map, feature, options) {
+        L.setOptions(this, options);
+        this.map = map;
+        this.feature = feature;
+        this.feature.editor = this;
+        this.editLayer = new L.LayerGroup();
+        this.tools = this.options.editTools || map.editTools;
+    },
+
+    enable: function () {
+        if (this._enabled) return this;
+        this.tools.editLayer.addLayer(this.editLayer);
+        this.onEnable();
+        this._enabled = true;
+        this.feature.on('remove', this.disable, this);
+        return this;
+    },
+
+    disable: function () {
+        this.feature.off('remove', this.disable, this);
+        this.editLayer.clearLayers();
+        this.tools.editLayer.removeLayer(this.editLayer);
+        this.onDisable();
+        delete this._enabled;
+        if (this.drawing) this.cancelDrawing();
+        return this;
+    },
+
+    fireAndForward: function (type, e) {
+        e = e || {};
+        e.layer = this.feature;
+        this.feature.fire(type, e);
+        if (this.feature.multi) this.feature.multi.fire(type, e);
+        this.tools.fireAndForward(type, e);
+    },
+
+    onEnable: function () {
+        this.fireAndForward('editable:enable');
+    },
+
+    onDisable: function () {
+        this.fireAndForward('editable:disable');
+    },
+
+    onEditing: function () {
+        this.fireAndForward('editable:editing');
+    },
+
+    onStartDrawing: function () {
+        this.fireAndForward('editable:drawing:start');
+    },
+
+    onEndDrawing: function () {
+        this.fireAndForward('editable:drawing:end');
+    },
+
+    onCancelDrawing: function () {
+        this.fireAndForward('editable:drawing:cancel');
+    },
+
+    onCommitDrawing: function () {
+        this.fireAndForward('editable:drawing:commit');
+    },
+
+    startDrawing: function () {
+        if (!this.drawing) this.drawing = L.Editable.FORWARD;
+        this.tools.registerForDrawing(this);
+        this.onStartDrawing();
+    },
+
+    commitDrawing: function () {
+        this.onCommitDrawing();
+        this.endDrawing();
+    },
+
+    cancelDrawing: function () {
+        this.onCancelDrawing();
+        this.endDrawing();
+    },
+
+    endDrawing: function () {
+        this.drawing = false;
+        this.tools.unregisterForDrawing(this);
+        this.onEndDrawing();
+    },
+
+    onMouseMove: function (e) {
+        if (this.drawing) {
+            this.tools.newClickHandler.setLatLng(e.latlng);
+        }
+    },
+
+    onTouch: function (e) {
+        this.onMouseMove(e);
+        if (this.drawing) this.tools.newClickHandler._fireMouseEvent(e);
+    },
+
+    onNewClickHandlerClicked: function (e) {
+        this.fireAndForward('editable:drawing:click', e);
+    },
+
+    isNewClickValid: function (latlng) {
+        return true;
+    }
+
+});
+
+L.Editable.MarkerEditor = L.Editable.BaseEditor.extend({
+
+    enable: function () {
+        if (this._enabled) return this;
+        L.Editable.BaseEditor.prototype.enable.call(this);
+        this.feature.dragging.enable();
+        this.feature.on('dragstart', this.onEditing, this);
+        return this;
+    },
+
+    disable: function () {
+        L.Editable.BaseEditor.prototype.disable.call(this);
+        this.feature.dragging.disable();
+        this.feature.off('dragstart', this.onEditing, this);
+        return this;
+    },
+
+    onMouseMove: function (e) {
+        if (this.drawing) {
+            L.Editable.BaseEditor.prototype.onMouseMove.call(this, e);
+            this.feature.setLatLng(e.latlng);
+            this.tools.newClickHandler._bringToFront();
+        }
+    },
+
+    onNewClickHandlerClicked: function (e) {
+        if (!this.isNewClickValid(e.latlng)) return;
+        // Send event before finishing drawing
+        L.Editable.BaseEditor.prototype.onNewClickHandlerClicked.call(this, e);
+        this.commitDrawing();
+    }
+
+});
+
+L.Editable.PathEditor = L.Editable.BaseEditor.extend({
+
+    CLOSED: false,
+    MIN_VERTEX: 2,
+
+    enable: function () {
+        if (this._enabled) return this;
+        L.Editable.BaseEditor.prototype.enable.call(this);
+        if (this.feature) {
+            this.initVertexMarkers();
+        }
+        return this;
+    },
+
+    disable: function () {
+        return L.Editable.BaseEditor.prototype.disable.call(this);
+    },
+
+    initVertexMarkers: function () {
+        // groups can be only latlngs (for polyline or symple polygon,
+        // or latlngs plus many holes, in case of a complex polygon)
+        var latLngGroups = this.getLatLngsGroups();
+        for (var i = 0; i < latLngGroups.length; i++) {
+            this.addVertexMarkers(latLngGroups[i]);
+        }
+    },
+
+    getLatLngsGroups: function () {
+        return [this.getLatLngs()];
+    },
+
+    getLatLngs: function () {
+        return this.feature.getLatLngs();
+    },
+
+    reset: function () {
+        this.editLayer.clearLayers();
+        this.initVertexMarkers();
+    },
+
+    addVertexMarker: function (latlng, latlngs) {
+        return new this.tools.options.vertexMarkerClass(latlng, latlngs, this);
+    },
+
+    addVertexMarkers: function (latlngs) {
+        for (var i = 0; i < latlngs.length; i++) {
+            this.addVertexMarker(latlngs[i], latlngs);
+        }
+    },
+
+    addMiddleMarker: function (left, right, latlngs) {
+        return new this.tools.options.middleMarkerClass(left, right, latlngs, this);
+    },
+
+    onVertexMarkerClick: function (e) {
+        var index = e.vertex.getIndex();
+        if (e.originalEvent.ctrlKey) {
+            this.onVertexMarkerCtrlClick(e);
+        } else if (e.originalEvent.altKey) {
+            this.onVertexMarkerAltClick(e);
+        } else if (e.originalEvent.shiftKey) {
+            this.onVertexMarkerShiftClick(e);
+        } else if (index >= this.MIN_VERTEX - 1 && index === e.vertex.getLastIndex() && this.drawing === L.Editable.FORWARD) {
+            this.commitDrawing();
+        } else if (index === 0 && this.drawing === L.Editable.BACKWARD && this._drawnLatLngs.length >= this.MIN_VERTEX) {
+            this.commitDrawing();
+        } else if (index === 0 && this.drawing === L.Editable.FORWARD && this._drawnLatLngs.length >= this.MIN_VERTEX && this.CLOSED) {
+            this.commitDrawing();  // Allow to close on first point also for polygons
+        } else {
+            this.onVertexRawMarkerClick(e);
+        }
+    },
+
+    onVertexRawMarkerClick: function (e) {
+        if (!this.vertexCanBeDeleted(e.vertex)) return;
+        e.vertex.delete();
+        this.refresh();
+    },
+
+    vertexCanBeDeleted: function (vertex) {
+        return vertex.latlngs.length > this.MIN_VERTEX;
+    },
+
+    onVertexDeleted: function (e) {
+        this.fireAndForward('editable:vertex:deleted', e);
+    },
+
+    onVertexMarkerCtrlClick: function (e) {
+        this.fireAndForward('editable:vertex:ctrlclick', e);
+    },
+
+    onVertexMarkerShiftClick: function (e) {
+        this.fireAndForward('editable:vertex:shiftclick', e);
+    },
+
+    onVertexMarkerAltClick: function (e) {
+        this.fireAndForward('editable:vertex:altclick', e);
+    },
+
+    onVertexMarkerContextMenu: function (e) {
+        this.fireAndForward('editable:vertex:contextmenu', e);
+    },
+
+    onVertexMarkerMouseDown: function (e) {
+        this.fireAndForward('editable:vertex:mousedown', e);
+    },
+
+    onMiddleMarkerMouseDown: function (e) {
+        this.fireAndForward('editable:middlemarker:mousedown', e);
+    },
+
+    onVertexMarkerDrag: function (e) {
+        this.fireAndForward('editable:vertex:drag', e);
+    },
+
+    onVertexMarkerDragStart: function (e) {
+        this.fireAndForward('editable:vertex:dragstart', e);
+    },
+
+    onVertexMarkerDragEnd: function (e) {
+        this.fireAndForward('editable:vertex:dragend', e);
+    },
+
+    startDrawing: function () {
+        if (!this._drawnLatLngs) this._drawnLatLngs = this.getLatLngs();
+        L.Editable.BaseEditor.prototype.startDrawing.call(this);
+    },
+
+    startDrawingForward: function () {
+        this.startDrawing();
+        this.tools.attachForwardLineGuide();
+    },
+
+    endDrawing: function () {
+        L.Editable.BaseEditor.prototype.endDrawing.call(this);
+        this.tools.detachForwardLineGuide();
+        this.tools.detachBackwardLineGuide();
+        delete this._drawnLatLngs;
+    },
+
+    addLatLng: function (latlng) {
+        if (this.drawing === L.Editable.FORWARD) this._drawnLatLngs.push(latlng);
+        else this._drawnLatLngs.unshift(latlng);
+        this.refresh();
+        this.addVertexMarker(latlng, this._drawnLatLngs);
+    },
+
+    newPointForward: function (latlng) {
+        this.addLatLng(latlng);
+        this.tools.anchorForwardLineGuide(latlng);
+        if (!this.tools.backwardLineGuide._latlngs[0]) {
+            this.tools.anchorBackwardLineGuide(latlng);
+        }
+    },
+
+    newPointBackward: function (latlng) {
+        this.addLatLng(latlng);
+        this.tools.anchorBackwardLineGuide(latlng);
+    },
+
+    onNewClickHandlerClicked: function (e) {
+        if (!this.isNewClickValid(e.latlng)) return;
+        if (this.drawing === L.Editable.FORWARD) this.newPointForward(e.latlng);
+        else this.newPointBackward(e.latlng);
+        L.Editable.BaseEditor.prototype.onNewClickHandlerClicked.call(this, e);
+    },
+
+    onMouseMove: function (e) {
+        if (this.drawing) {
+            L.Editable.BaseEditor.prototype.onMouseMove.call(this, e);
+            this.tools.moveForwardLineGuide(e.latlng);
+            this.tools.moveBackwardLineGuide(e.latlng);
+        }
+    },
+
+    refresh: function () {
+        this.feature.redraw();
+        this.onEditing();
+    }
+
+});
+
+L.Editable.PolylineEditor = L.Editable.PathEditor.extend({
+
+    startDrawingBackward: function () {
+        this.drawing = L.Editable.BACKWARD;
+        this.startDrawing();
+        this.tools.attachBackwardLineGuide();
+    },
+
+    continueBackward: function () {
+        this.tools.anchorBackwardLineGuide(this.getFirstLatLng());
+        this.startDrawingBackward();
+    },
+
+    continueForward: function () {
+        this.tools.anchorForwardLineGuide(this.getLastLatLng());
+        this.startDrawingForward();
+    },
+
+    getLastLatLng: function () {
+        return this.getLatLngs()[this.getLatLngs().length - 1];
+    },
+
+    getFirstLatLng: function () {
+        return this.getLatLngs()[0];
+    }
+
+});
+
+L.Editable.PolygonEditor = L.Editable.PathEditor.extend({
+
+    CLOSED: true,
+    MIN_VERTEX: 3,
+
+    getLatLngsGroups: function () {
+        var groups = L.Editable.PathEditor.prototype.getLatLngsGroups.call(this);
+        if (this.feature._holes) {
+            for (var i = 0; i < this.feature._holes.length; i++) {
+                groups.push(this.feature._holes[i]);
+            }
+        }
+        return groups;
+    },
+
+    startDrawingForward: function () {
+        L.Editable.PathEditor.prototype.startDrawingForward.call(this);
+        this.tools.attachBackwardLineGuide();
+    },
+
+    addNewEmptyHole: function () {
+        var holes = Array();
+        if (!this.feature._holes) {
+            this.feature._holes = [];
+        }
+        this.feature._holes.push(holes);
+        return holes;
+    },
+
+    newHole: function (latlng) {
+        this._drawnLatLngs = this.addNewEmptyHole();
+        this.startDrawingForward();
+        if (latlng) this.newPointForward(latlng);
+    },
+
+    checkContains: function (latlng) {
+        return this.feature._containsPoint(this.map.latLngToLayerPoint(latlng));
+    },
+
+    vertexCanBeDeleted: function (vertex) {
+        if (vertex.latlngs === this.getLatLngs()) return L.Editable.PathEditor.prototype.vertexCanBeDeleted.call(this, vertex);
+        else return true;  // Holes can be totally deleted without removing the layer itself
+    },
+
+    isNewClickValid: function (latlng) {
+        if (this._drawnLatLngs !== this.getLatLngs()) return this.checkContains(latlng);
+        return true;
+    },
+
+    onVertexDeleted: function (e) {
+        L.Editable.PathEditor.prototype.onVertexDeleted.call(this, e);
+        if (!e.vertex.latlngs.length && e.vertex.latlngs !== this.getLatLngs()) {
+            this.feature._holes.splice(this.feature._holes.indexOf(e.vertex.latlngs), 1);
+        }
+    }
+
+});
+
+L.Map.mergeOptions({
+    polylineEditorClass: L.Editable.PolylineEditor
+});
+
+L.Map.mergeOptions({
+    polygonEditorClass: L.Editable.PolygonEditor
+});
+
+L.Map.mergeOptions({
+    markerEditorClass: L.Editable.MarkerEditor
+});
+
+var EditableMixin = {
+
+    createEditor: function (map) {
+        map = map || this._map;
+        var Klass = this.options.editorClass || this.getEditorClass(map);
+        return new Klass(map, this, this.options.editOptions);
+    },
+
+    enableEdit: function () {
+        if (!this.editor) this.createEditor();
+        if (this.multi) this.multi.onEditEnabled();
+        return this.editor.enable();
+    },
+
+    editEnabled: function () {
+        return this.editor && this.editor._enabled;
+    },
+
+    disableEdit: function () {
+        if (this.editor) {
+            if (this.multi) this.multi.onEditDisabled();
+            this.editor.disable();
+            delete this.editor;
+        }
+    },
+
+    toggleEdit: function () {
+      if (this.editEnabled()) {
+        this.disableEdit();
+      } else {
+        this.enableEdit();
+      }
+    }
+
+};
+
+L.Polyline.include(EditableMixin);
+L.Polygon.include(EditableMixin);
+L.Marker.include(EditableMixin);
+
+L.Polyline.include({
+
+    _containsPoint: function (p, closed) {  // Copy-pasted from Leaflet
+        var i, j, k, len, len2, dist, part,
+            w = this.options.weight / 2;
+
+        if (L.Browser.touch) {
+            w += 10; // polyline click tolerance on touch devices
+        }
+
+        for (i = 0, len = this._parts.length; i < len; i++) {
+            part = this._parts[i];
+            for (j = 0, len2 = part.length, k = len2 - 1; j < len2; k = j++) {
+                if (!closed && (j === 0)) {
+                    continue;
+                }
+
+                dist = L.LineUtil.pointToSegmentDistance(p, part[k], part[j]);
+
+                if (dist <= w) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    },
+
+    getEditorClass: function (map) {
+        return map.options.polylineEditorClass;
+    }
+
+});
+L.Polygon.include({
+
+    _containsPoint: function (p) {  // Copy-pasted from Leaflet
+        var inside = false,
+            part, p1, p2,
+            i, j, k,
+            len, len2;
+
+        // TODO optimization: check if within bounds first
+
+        if (L.Polyline.prototype._containsPoint.call(this, p, true)) {
+            // click on polygon border
+            return true;
+        }
+
+        // ray casting algorithm for detecting if point is in polygon
+
+        for (i = 0, len = this._parts.length; i < len; i++) {
+            part = this._parts[i];
+
+            for (j = 0, len2 = part.length, k = len2 - 1; j < len2; k = j++) {
+                p1 = part[j];
+                p2 = part[k];
+
+                if (((p1.y > p.y) !== (p2.y > p.y)) &&
+                        (p.x < (p2.x - p1.x) * (p.y - p1.y) / (p2.y - p1.y) + p1.x)) {
+                    inside = !inside;
+                }
+            }
+        }
+
+        return inside;
+    },
+
+    getEditorClass: function (map) {
+        return map.options.polygonEditorClass;
+    }
+
+});
+
+L.Marker.include({
+
+    getEditorClass: function (map) {
+        return map.options.markerEditorClass;
+    }
+
+});
+
+var MultiEditableMixin = {
+
+    enableEdit: function () {
+        this.eachLayer(function(layer) {
+            layer.multi = this;
+            layer.enableEdit();
+        }, this);
+    },
+
+    disableEdit: function () {
+        this.eachLayer(function(layer) {
+            layer.disableEdit();
+        });
+    },
+
+    toggleEdit: function (e) {
+        if (!e.layer.editor) {
+            this.enableEdit(e);
+        } else {
+            this.disableEdit();
+        }
+    },
+
+    onEditEnabled: function () {
+        if (!this._editEnabled) {
+            this._editEnabled = true;
+            this.fire('editable:multi:edit:enabled');
+        }
+    },
+
+    onEditDisabled: function () {
+        if (this._editEnabled) {
+            this._editEnabled = false;
+            this.fire('editable:multi:edit:disabled');
+        }
+    },
+
+    editEnabled: function () {
+        return !!this._editEnabled;
+    }
+
+};
+L.MultiPolygon.include(MultiEditableMixin);
+L.MultiPolyline.include(MultiEditableMixin);
+
+;/*! showdown 27-08-2015 */
+(function(){
+/**
+ * Created by Tivie on 13-07-2015.
+ */
+
+function getDefaultOpts(simple) {
+  'use strict';
+
+  var defaultOptions = {
+    omitExtraWLInCodeBlocks: {
+      default: false,
+      describe: 'Omit the default extra whiteline added to code blocks',
+      type: 'boolean'
+    },
+    noHeaderId: {
+      default: false,
+      describe: 'Turn on/off generated header id',
+      type: 'boolean'
+    },
+    prefixHeaderId: {
+      default: false,
+      describe: 'Specify a prefix to generated header ids',
+      type: 'string'
+    },
+    headerLevelStart: {
+      default: false,
+      describe: 'The header blocks level start',
+      type: 'integer'
+    },
+    parseImgDimensions: {
+      default: false,
+      describe: 'Turn on/off image dimension parsing',
+      type: 'boolean'
+    },
+    simplifiedAutoLink: {
+      default: false,
+      describe: 'Turn on/off GFM autolink style',
+      type: 'boolean'
+    },
+    literalMidWordUnderscores: {
+      default: false,
+      describe: 'Parse midword underscores as literal underscores',
+      type: 'boolean'
+    },
+    strikethrough: {
+      default: false,
+      describe: 'Turn on/off strikethrough support',
+      type: 'boolean'
+    },
+    tables: {
+      default: false,
+      describe: 'Turn on/off tables support',
+      type: 'boolean'
+    },
+    tablesHeaderId: {
+      default: false,
+      describe: 'Add an id to table headers',
+      type: 'boolean'
+    },
+    ghCodeBlocks: {
+      default: true,
+      describe: 'Turn on/off GFM fenced code blocks support',
+      type: 'boolean'
+    },
+    tasklists: {
+      default: false,
+      describe: 'Turn on/off GFM tasklist support',
+      type: 'boolean'
+    },
+    smoothLivePreview: {
+      default: false,
+      describe: 'Prevents weird effects in live previews due to incomplete input',
+      type: 'boolean'
+    }
+  };
+  if (simple === false) {
+    return JSON.parse(JSON.stringify(defaultOptions));
+  }
+  var ret = {};
+  for (var opt in defaultOptions) {
+    if (defaultOptions.hasOwnProperty(opt)) {
+      ret[opt] = defaultOptions[opt].default;
+    }
+  }
+  return ret;
+}
+
+/**
+ * Created by Tivie on 06-01-2015.
+ */
+
+// Private properties
+var showdown = {},
+    parsers = {},
+    extensions = {},
+    globalOptions = getDefaultOpts(true),
+    flavor = {
+      github: {
+        omitExtraWLInCodeBlocks:   true,
+        prefixHeaderId:            'user-content-',
+        simplifiedAutoLink:        true,
+        literalMidWordUnderscores: true,
+        strikethrough:             true,
+        tables:                    true,
+        tablesHeaderId:            true,
+        ghCodeBlocks:              true,
+        tasklists:                 true
+      },
+      vanilla: getDefaultOpts(true)
+    };
+
+/**
+ * helper namespace
+ * @type {{}}
+ */
+showdown.helper = {};
+
+/**
+ * TODO LEGACY SUPPORT CODE
+ * @type {{}}
+ */
+showdown.extensions = {};
+
+/**
+ * Set a global option
+ * @static
+ * @param {string} key
+ * @param {*} value
+ * @returns {showdown}
+ */
+showdown.setOption = function (key, value) {
+  'use strict';
+  globalOptions[key] = value;
+  return this;
+};
+
+/**
+ * Get a global option
+ * @static
+ * @param {string} key
+ * @returns {*}
+ */
+showdown.getOption = function (key) {
+  'use strict';
+  return globalOptions[key];
+};
+
+/**
+ * Get the global options
+ * @static
+ * @returns {{}}
+ */
+showdown.getOptions = function () {
+  'use strict';
+  return globalOptions;
+};
+
+/**
+ * Reset global options to the default values
+ * @static
+ */
+showdown.resetOptions = function () {
+  'use strict';
+  globalOptions = getDefaultOpts(true);
+};
+
+/**
+ * Set the flavor showdown should use as default
+ * @param {string} name
+ */
+showdown.setFlavor = function (name) {
+  'use strict';
+  if (flavor.hasOwnProperty(name)) {
+    var preset = flavor[name];
+    for (var option in preset) {
+      if (preset.hasOwnProperty(option)) {
+        globalOptions[option] = preset[option];
+      }
+    }
+  }
+};
+
+/**
+ * Get the default options
+ * @static
+ * @param {boolean} [simple=true]
+ * @returns {{}}
+ */
+showdown.getDefaultOptions = function (simple) {
+  'use strict';
+  return getDefaultOpts(simple);
+};
+
+/**
+ * Get or set a subParser
+ *
+ * subParser(name)       - Get a registered subParser
+ * subParser(name, func) - Register a subParser
+ * @static
+ * @param {string} name
+ * @param {function} [func]
+ * @returns {*}
+ */
+showdown.subParser = function (name, func) {
+  'use strict';
+  if (showdown.helper.isString(name)) {
+    if (typeof func !== 'undefined') {
+      parsers[name] = func;
+    } else {
+      if (parsers.hasOwnProperty(name)) {
+        return parsers[name];
+      } else {
+        throw Error('SubParser named ' + name + ' not registered!');
+      }
+    }
+  }
+};
+
+/**
+ * Gets or registers an extension
+ * @static
+ * @param {string} name
+ * @param {object|function=} ext
+ * @returns {*}
+ */
+showdown.extension = function (name, ext) {
+  'use strict';
+
+  if (!showdown.helper.isString(name)) {
+    throw Error('Extension \'name\' must be a string');
+  }
+
+  name = showdown.helper.stdExtName(name);
+
+  // Getter
+  if (showdown.helper.isUndefined(ext)) {
+    if (!extensions.hasOwnProperty(name)) {
+      throw Error('Extension named ' + name + ' is not registered!');
+    }
+    return extensions[name];
+
+    // Setter
+  } else {
+    // Expand extension if it's wrapped in a function
+    if (typeof ext === 'function') {
+      ext = ext();
+    }
+
+    // Ensure extension is an array
+    if (!showdown.helper.isArray(ext)) {
+      ext = [ext];
+    }
+
+    var validExtension = validate(ext, name);
+
+    if (validExtension.valid) {
+      extensions[name] = ext;
+    } else {
+      throw Error(validExtension.error);
+    }
+  }
+};
+
+/**
+ * Gets all extensions registered
+ * @returns {{}}
+ */
+showdown.getAllExtensions = function () {
+  'use strict';
+  return extensions;
+};
+
+/**
+ * Remove an extension
+ * @param {string} name
+ */
+showdown.removeExtension = function (name) {
+  'use strict';
+  delete extensions[name];
+};
+
+/**
+ * Removes all extensions
+ */
+showdown.resetExtensions = function () {
+  'use strict';
+  extensions = {};
+};
+
+/**
+ * Validate extension
+ * @param {array} extension
+ * @param {string} name
+ * @returns {{valid: boolean, error: string}}
+ */
+function validate(extension, name) {
+  'use strict';
+
+  var errMsg = (name) ? 'Error in ' + name + ' extension->' : 'Error in unnamed extension',
+    ret = {
+      valid: true,
+      error: ''
+    };
+
+  if (!showdown.helper.isArray(extension)) {
+    extension = [extension];
+  }
+
+  for (var i = 0; i < extension.length; ++i) {
+    var baseMsg = errMsg + ' sub-extension ' + i + ': ',
+        ext = extension[i];
+    if (typeof ext !== 'object') {
+      ret.valid = false;
+      ret.error = baseMsg + 'must be an object, but ' + typeof ext + ' given';
+      return ret;
+    }
+
+    if (!showdown.helper.isString(ext.type)) {
+      ret.valid = false;
+      ret.error = baseMsg + 'property "type" must be a string, but ' + typeof ext.type + ' given';
+      return ret;
+    }
+
+    var type = ext.type = ext.type.toLowerCase();
+
+    // normalize extension type
+    if (type === 'language') {
+      type = ext.type = 'lang';
+    }
+
+    if (type === 'html') {
+      type = ext.type = 'output';
+    }
+
+    if (type !== 'lang' && type !== 'output') {
+      ret.valid = false;
+      ret.error = baseMsg + 'type ' + type + ' is not recognized. Valid values: "lang" or "output"';
+      return ret;
+    }
+
+    if (ext.filter) {
+      if (typeof ext.filter !== 'function') {
+        ret.valid = false;
+        ret.error = baseMsg + '"filter" must be a function, but ' + typeof ext.filter + ' given';
+        return ret;
+      }
+
+    } else if (ext.regex) {
+      if (showdown.helper.isString(ext.regex)) {
+        ext.regex = new RegExp(ext.regex, 'g');
+      }
+      if (!ext.regex instanceof RegExp) {
+        ret.valid = false;
+        ret.error = baseMsg + '"regex" property must either be a string or a RegExp object, but ' +
+          typeof ext.regex + ' given';
+        return ret;
+      }
+      if (showdown.helper.isUndefined(ext.replace)) {
+        ret.valid = false;
+        ret.error = baseMsg + '"regex" extensions must implement a replace string or function';
+        return ret;
+      }
+
+    } else {
+      ret.valid = false;
+      ret.error = baseMsg + 'extensions must define either a "regex" property or a "filter" method';
+      return ret;
+    }
+
+    if (showdown.helper.isUndefined(ext.filter) && showdown.helper.isUndefined(ext.regex)) {
+      ret.valid = false;
+      ret.error = baseMsg + 'output extensions must define a filter property';
+      return ret;
+    }
+  }
+  return ret;
+}
+
+/**
+ * Validate extension
+ * @param {object} ext
+ * @returns {boolean}
+ */
+showdown.validateExtension = function (ext) {
+  'use strict';
+
+  var validateExtension = validate(ext, null);
+  if (!validateExtension.valid) {
+    console.warn(validateExtension.error);
+    return false;
+  }
+  return true;
+};
+
+/**
+ * showdownjs helper functions
+ */
+
+if (!showdown.hasOwnProperty('helper')) {
+  showdown.helper = {};
+}
+
+/**
+ * Check if var is string
+ * @static
+ * @param {string} a
+ * @returns {boolean}
+ */
+showdown.helper.isString = function isString(a) {
+  'use strict';
+  return (typeof a === 'string' || a instanceof String);
+};
+
+/**
+ * ForEach helper function
+ * @static
+ * @param {*} obj
+ * @param {function} callback
+ */
+showdown.helper.forEach = function forEach(obj, callback) {
+  'use strict';
+  if (typeof obj.forEach === 'function') {
+    obj.forEach(callback);
+  } else {
+    for (var i = 0; i < obj.length; i++) {
+      callback(obj[i], i, obj);
+    }
+  }
+};
+
+/**
+ * isArray helper function
+ * @static
+ * @param {*} a
+ * @returns {boolean}
+ */
+showdown.helper.isArray = function isArray(a) {
+  'use strict';
+  return a.constructor === Array;
+};
+
+/**
+ * Check if value is undefined
+ * @static
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is `undefined`, else `false`.
+ */
+showdown.helper.isUndefined = function isUndefined(value) {
+  'use strict';
+  return typeof value === 'undefined';
+};
+
+/**
+ * Standardidize extension name
+ * @static
+ * @param {string} s extension name
+ * @returns {string}
+ */
+showdown.helper.stdExtName = function (s) {
+  'use strict';
+  return s.replace(/[_-]||\s/g, '').toLowerCase();
+};
+
+function escapeCharactersCallback(wholeMatch, m1) {
+  'use strict';
+  var charCodeToEscape = m1.charCodeAt(0);
+  return '~E' + charCodeToEscape + 'E';
+}
+
+/**
+ * Callback used to escape characters when passing through String.replace
+ * @static
+ * @param {string} wholeMatch
+ * @param {string} m1
+ * @returns {string}
+ */
+showdown.helper.escapeCharactersCallback = escapeCharactersCallback;
+
+/**
+ * Escape characters in a string
+ * @static
+ * @param {string} text
+ * @param {string} charsToEscape
+ * @param {boolean} afterBackslash
+ * @returns {XML|string|void|*}
+ */
+showdown.helper.escapeCharacters = function escapeCharacters(text, charsToEscape, afterBackslash) {
+  'use strict';
+  // First we have to escape the escape characters so that
+  // we can build a character class out of them
+  var regexString = '([' + charsToEscape.replace(/([\[\]\\])/g, '\\$1') + '])';
+
+  if (afterBackslash) {
+    regexString = '\\\\' + regexString;
+  }
+
+  var regex = new RegExp(regexString, 'g');
+  text = text.replace(regex, escapeCharactersCallback);
+
+  return text;
+};
+
+/**
+ * POLYFILLS
+ */
+if (showdown.helper.isUndefined(console)) {
+  console = {
+    warn: function (msg) {
+      'use strict';
+      alert(msg);
+    },
+    log: function (msg) {
+      'use strict';
+      alert(msg);
+    }
+  };
+}
+
+/**
+ * Created by Estevao on 31-05-2015.
+ */
+
+/**
+ * Showdown Converter class
+ * @class
+ * @param {object} [converterOptions]
+ * @returns {Converter}
+ */
+showdown.Converter = function (converterOptions) {
+  'use strict';
+
+  var
+      /**
+       * Options used by this converter
+       * @private
+       * @type {{}}
+       */
+      options = {},
+
+      /**
+       * Language extensions used by this converter
+       * @private
+       * @type {Array}
+       */
+      langExtensions = [],
+
+      /**
+       * Output modifiers extensions used by this converter
+       * @private
+       * @type {Array}
+       */
+      outputModifiers = [],
+
+      /**
+       * The parser Order
+       * @private
+       * @type {string[]}
+       */
+      parserOrder = [
+        'githubCodeBlocks',
+        'hashHTMLBlocks',
+        'stripLinkDefinitions',
+        'blockGamut',
+        'unescapeSpecialChars'
+      ];
+
+  _constructor();
+
+  /**
+   * Converter constructor
+   * @private
+   */
+  function _constructor() {
+    converterOptions = converterOptions || {};
+
+    for (var gOpt in globalOptions) {
+      if (globalOptions.hasOwnProperty(gOpt)) {
+        options[gOpt] = globalOptions[gOpt];
+      }
+    }
+
+    // Merge options
+    if (typeof converterOptions === 'object') {
+      for (var opt in converterOptions) {
+        if (converterOptions.hasOwnProperty(opt)) {
+          options[opt] = converterOptions[opt];
+        }
+      }
+    } else {
+      throw Error('Converter expects the passed parameter to be an object, but ' + typeof converterOptions +
+      ' was passed instead.');
+    }
+
+    if (options.extensions) {
+      showdown.helper.forEach(options.extensions, _parseExtension);
+    }
+  }
+
+  /**
+   * Parse extension
+   * @param {*} ext
+   * @param {string} [name='']
+   * @private
+   */
+  function _parseExtension(ext, name) {
+
+    name = name || null;
+    // If it's a string, the extension was previously loaded
+    if (showdown.helper.isString(ext)) {
+      ext = showdown.helper.stdExtName(ext);
+      name = ext;
+
+      // LEGACY_SUPPORT CODE
+      if (showdown.extensions[ext]) {
+        console.warn('DEPRECATION WARNING: ' + ext + ' is an old extension that uses a deprecated loading method.' +
+          'Please inform the developer that the extension should be updated!');
+        legacyExtensionLoading(showdown.extensions[ext], ext);
+        return;
+      // END LEGACY SUPPORT CODE
+
+      } else if (!showdown.helper.isUndefined(extensions[ext])) {
+        ext = extensions[ext];
+
+      } else {
+        throw Error('Extension "' + ext + '" could not be loaded. It was either not found or is not a valid extension.');
+      }
+    }
+
+    if (typeof ext === 'function') {
+      ext = ext();
+    }
+
+    if (!showdown.helper.isArray(ext)) {
+      ext = [ext];
+    }
+
+    var validExt = validate(ext, name);
+    if (!validExt.valid) {
+      throw Error(validExt.error);
+    }
+
+    for (var i = 0; i < ext.length; ++i) {
+      switch (ext[i].type) {
+        case 'lang':
+          langExtensions.push(ext[i]);
+          break;
+
+        case 'output':
+          outputModifiers.push(ext[i]);
+          break;
+
+        default:
+          // should never reach here
+          throw Error('Extension loader error: Type unrecognized!!!');
+      }
+    }
+  }
+
+  /**
+   * LEGACY_SUPPORT
+   * @param {*} ext
+   * @param {string} name
+   */
+  function legacyExtensionLoading(ext, name) {
+    if (typeof ext === 'function') {
+      ext = ext(new showdown.Converter());
+    }
+    if (!showdown.helper.isArray(ext)) {
+      ext = [ext];
+    }
+    var valid = validate(ext, name);
+
+    if (!valid.valid) {
+      throw Error(valid.error);
+    }
+
+    for (var i = 0; i < ext.length; ++i) {
+      switch (ext[i].type) {
+        case 'lang':
+          langExtensions.push(ext[i]);
+          break;
+        case 'output':
+          outputModifiers.push(ext[i]);
+          break;
+        default:// should never reach here
+          throw Error('Extension loader error: Type unrecognized!!!');
+      }
+    }
+  }
+
+  /**
+   * Converts a markdown string into HTML
+   * @param {string} text
+   * @returns {*}
+   */
+  this.makeHtml = function (text) {
+    //check if text is not falsy
+    if (!text) {
+      return text;
+    }
+
+    var globals = {
+      gHtmlBlocks:     [],
+      gUrls:           {},
+      gTitles:         {},
+      gDimensions:     {},
+      gListLevel:      0,
+      hashLinkCounts:  {},
+      langExtensions:  langExtensions,
+      outputModifiers: outputModifiers,
+      converter:       this
+    };
+
+    // attacklab: Replace ~ with ~T
+    // This lets us use tilde as an escape char to avoid md5 hashes
+    // The choice of character is arbitrary; anything that isn't
+    // magic in Markdown will work.
+    text = text.replace(/~/g, '~T');
+
+    // attacklab: Replace $ with ~D
+    // RegExp interprets $ as a special character
+    // when it's in a replacement string
+    text = text.replace(/\$/g, '~D');
+
+    // Standardize line endings
+    text = text.replace(/\r\n/g, '\n'); // DOS to Unix
+    text = text.replace(/\r/g, '\n'); // Mac to Unix
+
+    // Make sure text begins and ends with a couple of newlines:
+    text = '\n\n' + text + '\n\n';
+
+    // detab
+    text = showdown.subParser('detab')(text, options, globals);
+
+    // stripBlankLines
+    text = showdown.subParser('stripBlankLines')(text, options, globals);
+
+    //run languageExtensions
+    showdown.helper.forEach(langExtensions, function (ext) {
+      text = showdown.subParser('runExtension')(ext, text, options, globals);
+    });
+
+    // Run all registered parsers
+    for (var i = 0; i < parserOrder.length; ++i) {
+      var name = parserOrder[i];
+      text = parsers[name](text, options, globals);
+    }
+
+    // attacklab: Restore dollar signs
+    text = text.replace(/~D/g, '$$');
+
+    // attacklab: Restore tildes
+    text = text.replace(/~T/g, '~');
+
+    // Run output modifiers
+    showdown.helper.forEach(outputModifiers, function (ext) {
+      text = showdown.subParser('runExtension')(ext, text, options, globals);
+    });
+
+    return text;
+  };
+
+  /**
+   * Set an option of this Converter instance
+   * @param {string} key
+   * @param {*} value
+   */
+  this.setOption = function (key, value) {
+    options[key] = value;
+  };
+
+  /**
+   * Get the option of this Converter instance
+   * @param {string} key
+   * @returns {*}
+   */
+  this.getOption = function (key) {
+    return options[key];
+  };
+
+  /**
+   * Get the options of this Converter instance
+   * @returns {{}}
+   */
+  this.getOptions = function () {
+    return options;
+  };
+
+  /**
+   * Add extension to THIS converter
+   * @param {{}} extension
+   * @param {string} [name=null]
+   */
+  this.addExtension = function (extension, name) {
+    name = name || null;
+    _parseExtension(extension, name);
+  };
+
+  /**
+   * Use a global registered extension with THIS converter
+   * @param {string} extensionName Name of the previously registered extension
+   */
+  this.useExtension = function (extensionName) {
+    _parseExtension(extensionName);
+  };
+
+  /**
+   * Set the flavor THIS converter should use
+   * @param {string} name
+   */
+  this.setFlavor = function (name) {
+    if (flavor.hasOwnProperty(name)) {
+      var preset = flavor[name];
+      for (var option in preset) {
+        if (preset.hasOwnProperty(option)) {
+          options[option] = preset[option];
+        }
+      }
+    }
+  };
+
+  /**
+   * Remove an extension from THIS converter.
+   * Note: This is a costly operation. It's better to initialize a new converter
+   * and specify the extensions you wish to use
+   * @param {Array} extension
+   */
+  this.removeExtension = function (extension) {
+    if (!showdown.helper.isArray(extension)) {
+      extension = [extension];
+    }
+    for (var a = 0; a < extension.length; ++a) {
+      var ext = extension[a];
+      for (var i = 0; i < langExtensions.length; ++i) {
+        if (langExtensions[i] === ext) {
+          langExtensions[i].splice(i, 1);
+        }
+      }
+      for (var ii = 0; ii < outputModifiers.length; ++i) {
+        if (outputModifiers[ii] === ext) {
+          outputModifiers[ii].splice(i, 1);
+        }
+      }
+    }
+  };
+
+  /**
+   * Get all extension of THIS converter
+   * @returns {{language: Array, output: Array}}
+   */
+  this.getAllExtensions = function () {
+    return {
+      language: langExtensions,
+      output: outputModifiers
+    };
+  };
+};
+
+/**
+ * Turn Markdown link shortcuts into XHTML <a> tags.
+ */
+showdown.subParser('anchors', function (text, config, globals) {
+  'use strict';
+
+  var writeAnchorTag = function (wholeMatch, m1, m2, m3, m4, m5, m6, m7) {
+    if (showdown.helper.isUndefined(m7)) {
+      m7 = '';
+    }
+    wholeMatch = m1;
+    var linkText = m2,
+        linkId = m3.toLowerCase(),
+        url = m4,
+        title = m7;
+
+    if (!url) {
+      if (!linkId) {
+        // lower-case and turn embedded newlines into spaces
+        linkId = linkText.toLowerCase().replace(/ ?\n/g, ' ');
+      }
+      url = '#' + linkId;
+
+      if (!showdown.helper.isUndefined(globals.gUrls[linkId])) {
+        url = globals.gUrls[linkId];
+        if (!showdown.helper.isUndefined(globals.gTitles[linkId])) {
+          title = globals.gTitles[linkId];
+        }
+      } else {
+        if (wholeMatch.search(/\(\s*\)$/m) > -1) {
+          // Special case for explicit empty url
+          url = '';
+        } else {
+          return wholeMatch;
+        }
+      }
+    }
+
+    url = showdown.helper.escapeCharacters(url, '*_', false);
+    var result = '<a href="' + url + '"';
+
+    if (title !== '' && title !== null) {
+      title = title.replace(/"/g, '&quot;');
+      title = showdown.helper.escapeCharacters(title, '*_', false);
+      result += ' title="' + title + '"';
+    }
+
+    result += '>' + linkText + '</a>';
+
+    return result;
+  };
+
+  // First, handle reference-style links: [link text] [id]
+  /*
+   text = text.replace(/
+   (							// wrap whole match in $1
+   \[
+   (
+   (?:
+   \[[^\]]*\]		// allow brackets nested one level
+   |
+   [^\[]			// or anything else
+   )*
+   )
+   \]
+
+   [ ]?					// one optional space
+   (?:\n[ ]*)?				// one optional newline followed by spaces
+
+   \[
+   (.*?)					// id = $3
+   \]
+   )()()()()					// pad remaining backreferences
+   /g,_DoAnchors_callback);
+   */
+  text = text.replace(/(\[((?:\[[^\]]*\]|[^\[\]])*)\][ ]?(?:\n[ ]*)?\[(.*?)\])()()()()/g, writeAnchorTag);
+
+  //
+  // Next, inline-style links: [link text](url "optional title")
+  //
+
+  /*
+   text = text.replace(/
+   (						// wrap whole match in $1
+   \[
+   (
+   (?:
+   \[[^\]]*\]	// allow brackets nested one level
+   |
+   [^\[\]]			// or anything else
+   )
+   )
+   \]
+   \(						// literal paren
+   [ \t]*
+   ()						// no id, so leave $3 empty
+   <?(.*?)>?				// href = $4
+   [ \t]*
+   (						// $5
+   (['"])				// quote char = $6
+   (.*?)				// Title = $7
+   \6					// matching quote
+   [ \t]*				// ignore any spaces/tabs between closing quote and )
+   )?						// title is optional
+   \)
+   )
+   /g,writeAnchorTag);
+   */
+  text = text.replace(/(\[((?:\[[^\]]*\]|[^\[\]])*)\]\([ \t]*()<?(.*?(?:\(.*?\).*?)?)>?[ \t]*((['"])(.*?)\6[ \t]*)?\))/g,
+                      writeAnchorTag);
+
+  //
+  // Last, handle reference-style shortcuts: [link text]
+  // These must come last in case you've also got [link test][1]
+  // or [link test](/foo)
+  //
+
+  /*
+   text = text.replace(/
+   (                // wrap whole match in $1
+   \[
+   ([^\[\]]+)       // link text = $2; can't contain '[' or ']'
+   \]
+   )()()()()()      // pad rest of backreferences
+   /g, writeAnchorTag);
+   */
+  text = text.replace(/(\[([^\[\]]+)\])()()()()()/g, writeAnchorTag);
+
+  return text;
+
+});
+
+showdown.subParser('autoLinks', function (text, options) {
+  'use strict';
+
+  //simpleURLRegex  = /\b(((https?|ftp|dict):\/\/|www\.)[-.+~:?#@!$&'()*,;=[\]\w]+)\b/gi,
+
+  var simpleURLRegex  = /\b(((https?|ftp|dict):\/\/|www\.)[^'">\s]+\.[^'">\s]+)(?=\s|$)(?!["<>])/gi,
+      delimUrlRegex   = /<(((https?|ftp|dict):\/\/|www\.)[^'">\s]+)>/gi,
+      simpleMailRegex = /\b(?:mailto:)?([-.\w]+@[-a-z0-9]+(\.[-a-z0-9]+)*\.[a-z]+)\b/gi,
+      delimMailRegex  = /<(?:mailto:)?([-.\w]+@[-a-z0-9]+(\.[-a-z0-9]+)*\.[a-z]+)>/gi;
+
+  text = text.replace(delimUrlRegex, '<a href=\"$1\">$1</a>');
+  text = text.replace(delimMailRegex, replaceMail);
+  //simpleURLRegex  = /\b(((https?|ftp|dict):\/\/|www\.)[-.+~:?#@!$&'()*,;=[\]\w]+)\b/gi,
+  // Email addresses: <address@domain.foo>
+
+  if (options.simplifiedAutoLink) {
+    text = text.replace(simpleURLRegex, '<a href=\"$1\">$1</a>');
+    text = text.replace(simpleMailRegex, replaceMail);
+  }
+
+  function replaceMail(wholeMatch, m1) {
+    var unescapedStr = showdown.subParser('unescapeSpecialChars')(m1);
+    return showdown.subParser('encodeEmailAddress')(unescapedStr);
+  }
+
+  return text;
+});
+
+/**
+ * These are all the transformations that form block-level
+ * tags like paragraphs, headers, and list items.
+ */
+showdown.subParser('blockGamut', function (text, options, globals) {
+  'use strict';
+
+  // we parse blockquotes first so that we can have headings and hrs
+  // inside blockquotes
+  text = showdown.subParser('blockQuotes')(text, options, globals);
+  text = showdown.subParser('headers')(text, options, globals);
+
+  // Do Horizontal Rules:
+  var key = showdown.subParser('hashBlock')('<hr />', options, globals);
+  text = text.replace(/^[ ]{0,2}([ ]?\*[ ]?){3,}[ \t]*$/gm, key);
+  text = text.replace(/^[ ]{0,2}([ ]?\-[ ]?){3,}[ \t]*$/gm, key);
+  text = text.replace(/^[ ]{0,2}([ ]?_[ ]?){3,}[ \t]*$/gm, key);
+
+  text = showdown.subParser('lists')(text, options, globals);
+  text = showdown.subParser('codeBlocks')(text, options, globals);
+  text = showdown.subParser('tables')(text, options, globals);
+
+  // We already ran _HashHTMLBlocks() before, in Markdown(), but that
+  // was to escape raw HTML in the original Markdown source. This time,
+  // we're escaping the markup we've just created, so that we don't wrap
+  // <p> tags around block-level tags.
+  text = showdown.subParser('hashHTMLBlocks')(text, options, globals);
+  text = showdown.subParser('paragraphs')(text, options, globals);
+
+  return text;
+
+});
+
+showdown.subParser('blockQuotes', function (text, options, globals) {
+  'use strict';
+
+  /*
+   text = text.replace(/
+   (								// Wrap whole match in $1
+   (
+   ^[ \t]*>[ \t]?			// '>' at the start of a line
+   .+\n					// rest of the first line
+   (.+\n)*					// subsequent consecutive lines
+   \n*						// blanks
+   )+
+   )
+   /gm, function(){...});
+   */
+
+  text = text.replace(/((^[ \t]{0,3}>[ \t]?.+\n(.+\n)*\n*)+)/gm, function (wholeMatch, m1) {
+    var bq = m1;
+
+    // attacklab: hack around Konqueror 3.5.4 bug:
+    // "----------bug".replace(/^-/g,"") == "bug"
+    bq = bq.replace(/^[ \t]*>[ \t]?/gm, '~0'); // trim one level of quoting
+
+    // attacklab: clean up hack
+    bq = bq.replace(/~0/g, '');
+
+    bq = bq.replace(/^[ \t]+$/gm, ''); // trim whitespace-only lines
+    bq = showdown.subParser('githubCodeBlocks')(bq, options, globals);
+    bq = showdown.subParser('blockGamut')(bq, options, globals); // recurse
+
+    bq = bq.replace(/(^|\n)/g, '$1  ');
+    // These leading spaces screw with <pre> content, so we need to fix that:
+    bq = bq.replace(/(\s*<pre>[^\r]+?<\/pre>)/gm, function (wholeMatch, m1) {
+      var pre = m1;
+      // attacklab: hack around Konqueror 3.5.4 bug:
+      pre = pre.replace(/^  /mg, '~0');
+      pre = pre.replace(/~0/g, '');
+      return pre;
+    });
+
+    return showdown.subParser('hashBlock')('<blockquote>\n' + bq + '\n</blockquote>', options, globals);
+  });
+  return text;
+});
+
+/**
+ * Process Markdown `<pre><code>` blocks.
+ */
+showdown.subParser('codeBlocks', function (text, options, globals) {
+  'use strict';
+
+  /*
+   text = text.replace(text,
+   /(?:\n\n|^)
+   (								// $1 = the code block -- one or more lines, starting with a space/tab
+   (?:
+   (?:[ ]{4}|\t)			// Lines must start with a tab or a tab-width of spaces - attacklab: g_tab_width
+   .*\n+
+   )+
+   )
+   (\n*[ ]{0,3}[^ \t\n]|(?=~0))	// attacklab: g_tab_width
+   /g,function(){...});
+   */
+
+  // attacklab: sentinel workarounds for lack of \A and \Z, safari\khtml bug
+  text += '~0';
+
+  var pattern = /(?:\n\n|^)((?:(?:[ ]{4}|\t).*\n+)+)(\n*[ ]{0,3}[^ \t\n]|(?=~0))/g;
+  text = text.replace(pattern, function (wholeMatch, m1, m2) {
+    var codeblock = m1,
+        nextChar = m2,
+        end = '\n';
+
+    codeblock = showdown.subParser('outdent')(codeblock);
+    codeblock = showdown.subParser('encodeCode')(codeblock);
+    codeblock = showdown.subParser('detab')(codeblock);
+    codeblock = codeblock.replace(/^\n+/g, ''); // trim leading newlines
+    codeblock = codeblock.replace(/\n+$/g, ''); // trim trailing newlines
+
+    if (options.omitExtraWLInCodeBlocks) {
+      end = '';
+    }
+
+    codeblock = '<pre><code>' + codeblock + end + '</code></pre>';
+
+    return showdown.subParser('hashBlock')(codeblock, options, globals) + nextChar;
+  });
+
+  // attacklab: strip sentinel
+  text = text.replace(/~0/, '');
+
+  return text;
+});
+
+/**
+ *
+ *   *  Backtick quotes are used for <code></code> spans.
+ *
+ *   *  You can use multiple backticks as the delimiters if you want to
+ *     include literal backticks in the code span. So, this input:
+ *
+ *         Just type ``foo `bar` baz`` at the prompt.
+ *
+ *       Will translate to:
+ *
+ *         <p>Just type <code>foo `bar` baz</code> at the prompt.</p>
+ *
+ *    There's no arbitrary limit to the number of backticks you
+ *    can use as delimters. If you need three consecutive backticks
+ *    in your code, use four for delimiters, etc.
+ *
+ *  *  You can use spaces to get literal backticks at the edges:
+ *
+ *         ... type `` `bar` `` ...
+ *
+ *       Turns to:
+ *
+ *         ... type <code>`bar`</code> ...
+ */
+showdown.subParser('codeSpans', function (text) {
+  'use strict';
+
+  //special case -> literal html code tag
+  text = text.replace(/(<code[^><]*?>)([^]*?)<\/code>/g, function (wholeMatch, tag, c) {
+    c = c.replace(/^([ \t]*)/g, '');	// leading whitespace
+    c = c.replace(/[ \t]*$/g, '');	// trailing whitespace
+    c = showdown.subParser('encodeCode')(c);
+    return tag + c + '</code>';
+  });
+
+  /*
+   text = text.replace(/
+   (^|[^\\])					// Character before opening ` can't be a backslash
+   (`+)						// $2 = Opening run of `
+   (							// $3 = The code block
+   [^\r]*?
+   [^`]					// attacklab: work around lack of lookbehind
+   )
+   \2							// Matching closer
+   (?!`)
+   /gm, function(){...});
+   */
+  text = text.replace(/(^|[^\\])(`+)([^\r]*?[^`])\2(?!`)/gm,
+    function (wholeMatch, m1, m2, m3) {
+      var c = m3;
+      c = c.replace(/^([ \t]*)/g, '');	// leading whitespace
+      c = c.replace(/[ \t]*$/g, '');	// trailing whitespace
+      c = showdown.subParser('encodeCode')(c);
+      return m1 + '<code>' + c + '</code>';
+    }
+  );
+
+  return text;
+});
+
+/**
+ * Convert all tabs to spaces
+ */
+showdown.subParser('detab', function (text) {
+  'use strict';
+
+  // expand first n-1 tabs
+  text = text.replace(/\t(?=\t)/g, '    '); // g_tab_width
+
+  // replace the nth with two sentinels
+  text = text.replace(/\t/g, '~A~B');
+
+  // use the sentinel to anchor our regex so it doesn't explode
+  text = text.replace(/~B(.+?)~A/g, function (wholeMatch, m1) {
+    var leadingText = m1,
+        numSpaces = 4 - leadingText.length % 4;  // g_tab_width
+
+    // there *must* be a better way to do this:
+    for (var i = 0; i < numSpaces; i++) {
+      leadingText += ' ';
+    }
+
+    return leadingText;
+  });
+
+  // clean up sentinels
+  text = text.replace(/~A/g, '    ');  // g_tab_width
+  text = text.replace(/~B/g, '');
+
+  return text;
+
+});
+
+/**
+ * Smart processing for ampersands and angle brackets that need to be encoded.
+ */
+showdown.subParser('encodeAmpsAndAngles', function (text) {
+  'use strict';
+  // Ampersand-encoding based entirely on Nat Irons's Amputator MT plugin:
+  // http://bumppo.net/projects/amputator/
+  text = text.replace(/&(?!#?[xX]?(?:[0-9a-fA-F]+|\w+);)/g, '&amp;');
+
+  // Encode naked <'s
+  text = text.replace(/<(?![a-z\/?\$!])/gi, '&lt;');
+
+  return text;
+});
+
+/**
+ * Returns the string, with after processing the following backslash escape sequences.
+ *
+ * attacklab: The polite way to do this is with the new escapeCharacters() function:
+ *
+ *    text = escapeCharacters(text,"\\",true);
+ *    text = escapeCharacters(text,"`*_{}[]()>#+-.!",true);
+ *
+ * ...but we're sidestepping its use of the (slow) RegExp constructor
+ * as an optimization for Firefox.  This function gets called a LOT.
+ */
+showdown.subParser('encodeBackslashEscapes', function (text) {
+  'use strict';
+  text = text.replace(/\\(\\)/g, showdown.helper.escapeCharactersCallback);
+  text = text.replace(/\\([`*_{}\[\]()>#+-.!])/g, showdown.helper.escapeCharactersCallback);
+  return text;
+});
+
+/**
+ * Encode/escape certain characters inside Markdown code runs.
+ * The point is that in code, these characters are literals,
+ * and lose their special Markdown meanings.
+ */
+showdown.subParser('encodeCode', function (text) {
+  'use strict';
+
+  // Encode all ampersands; HTML entities are not
+  // entities within a Markdown code span.
+  text = text.replace(/&/g, '&amp;');
+
+  // Do the angle bracket song and dance:
+  text = text.replace(/</g, '&lt;');
+  text = text.replace(/>/g, '&gt;');
+
+  // Now, escape characters that are magic in Markdown:
+  text = showdown.helper.escapeCharacters(text, '*_{}[]\\', false);
+
+  // jj the line above breaks this:
+  //---
+  //* Item
+  //   1. Subitem
+  //            special char: *
+  // ---
+
+  return text;
+});
+
+/**
+ *  Input: an email address, e.g. "foo@example.com"
+ *
+ *  Output: the email address as a mailto link, with each character
+ *    of the address encoded as either a decimal or hex entity, in
+ *    the hopes of foiling most address harvesting spam bots. E.g.:
+ *
+ *    <a href="&#x6D;&#97;&#105;&#108;&#x74;&#111;:&#102;&#111;&#111;&#64;&#101;
+ *       x&#x61;&#109;&#x70;&#108;&#x65;&#x2E;&#99;&#111;&#109;">&#102;&#111;&#111;
+ *       &#64;&#101;x&#x61;&#109;&#x70;&#108;&#x65;&#x2E;&#99;&#111;&#109;</a>
+ *
+ *  Based on a filter by Matthew Wickline, posted to the BBEdit-Talk
+ *  mailing list: <http://tinyurl.com/yu7ue>
+ *
+ */
+showdown.subParser('encodeEmailAddress', function (addr) {
+  'use strict';
+
+  var encode = [
+    function (ch) {
+      return '&#' + ch.charCodeAt(0) + ';';
+    },
+    function (ch) {
+      return '&#x' + ch.charCodeAt(0).toString(16) + ';';
+    },
+    function (ch) {
+      return ch;
+    }
+  ];
+
+  addr = 'mailto:' + addr;
+
+  addr = addr.replace(/./g, function (ch) {
+    if (ch === '@') {
+      // this *must* be encoded. I insist.
+      ch = encode[Math.floor(Math.random() * 2)](ch);
+    } else if (ch !== ':') {
+      // leave ':' alone (to spot mailto: later)
+      var r = Math.random();
+      // roughly 10% raw, 45% hex, 45% dec
+      ch = (
+        r > 0.9 ? encode[2](ch) : r > 0.45 ? encode[1](ch) : encode[0](ch)
+      );
+    }
+    return ch;
+  });
+
+  addr = '<a href="' + addr + '">' + addr + '</a>';
+  addr = addr.replace(/">.+:/g, '">'); // strip the mailto: from the visible part
+
+  return addr;
+});
+
+/**
+ * Within tags -- meaning between < and > -- encode [\ ` * _] so they
+ * don't conflict with their use in Markdown for code, italics and strong.
+ */
+showdown.subParser('escapeSpecialCharsWithinTagAttributes', function (text) {
+  'use strict';
+
+  // Build a regex to find HTML tags and comments.  See Friedl's
+  // "Mastering Regular Expressions", 2nd Ed., pp. 200-201.
+  var regex = /(<[a-z\/!$]("[^"]*"|'[^']*'|[^'">])*>|<!(--.*?--\s*)+>)/gi;
+
+  text = text.replace(regex, function (wholeMatch) {
+    var tag = wholeMatch.replace(/(.)<\/?code>(?=.)/g, '$1`');
+    tag = showdown.helper.escapeCharacters(tag, '\\`*_', false);
+    return tag;
+  });
+
+  return text;
+});
+
+/**
+ * Handle github codeblocks prior to running HashHTML so that
+ * HTML contained within the codeblock gets escaped properly
+ * Example:
+ * ```ruby
+ *     def hello_world(x)
+ *       puts "Hello, #{x}"
+ *     end
+ * ```
+ */
+showdown.subParser('githubCodeBlocks', function (text, options, globals) {
+  'use strict';
+
+  // early exit if option is not enabled
+  if (!options.ghCodeBlocks) {
+    return text;
+  }
+
+  text += '~0';
+
+  text = text.replace(/(?:^|\n)```(.*)\n([\s\S]*?)\n```/g, function (wholeMatch, language, codeblock) {
+    var end = (options.omitExtraWLInCodeBlocks) ? '' : '\n';
+
+    codeblock = showdown.subParser('encodeCode')(codeblock);
+    codeblock = showdown.subParser('detab')(codeblock);
+    codeblock = codeblock.replace(/^\n+/g, ''); // trim leading newlines
+    codeblock = codeblock.replace(/\n+$/g, ''); // trim trailing whitespace
+
+    codeblock = '<pre><code' + (language ? ' class="' + language + ' language-' + language + '"' : '') + '>' + codeblock + end + '</code></pre>';
+
+    return showdown.subParser('hashBlock')(codeblock, options, globals);
+  });
+
+  // attacklab: strip sentinel
+  text = text.replace(/~0/, '');
+
+  return text;
+
+});
+
+showdown.subParser('hashBlock', function (text, options, globals) {
+  'use strict';
+  text = text.replace(/(^\n+|\n+$)/g, '');
+  return '\n\n~K' + (globals.gHtmlBlocks.push(text) - 1) + 'K\n\n';
+});
+
+showdown.subParser('hashElement', function (text, options, globals) {
+  'use strict';
+
+  return function (wholeMatch, m1) {
+    var blockText = m1;
+
+    // Undo double lines
+    blockText = blockText.replace(/\n\n/g, '\n');
+    blockText = blockText.replace(/^\n/, '');
+
+    // strip trailing blank lines
+    blockText = blockText.replace(/\n+$/g, '');
+
+    // Replace the element text with a marker ("~KxK" where x is its key)
+    blockText = '\n\n~K' + (globals.gHtmlBlocks.push(blockText) - 1) + 'K\n\n';
+
+    return blockText;
+  };
+});
+
+showdown.subParser('hashHTMLBlocks', function (text, options, globals) {
+  'use strict';
+
+  // attacklab: Double up blank lines to reduce lookaround
+  text = text.replace(/\n/g, '\n\n');
+
+  // Hashify HTML blocks:
+  // We only want to do this for block-level HTML tags, such as headers,
+  // lists, and tables. That's because we still want to wrap <p>s around
+  // "paragraphs" that are wrapped in non-block-level tags, such as anchors,
+  // phrase emphasis, and spans. The list of tags we're looking for is
+  // hard-coded:
+  //var block_tags_a =
+  // 'p|div|h[1-6]|blockquote|pre|table|dl|ol|ul|script|noscript|form|fieldset|iframe|math|ins|del|style|section|header|footer|nav|article|aside';
+  // var block_tags_b =
+  // 'p|div|h[1-6]|blockquote|pre|table|dl|ol|ul|script|noscript|form|fieldset|iframe|math|style|section|header|footer|nav|article|aside';
+
+  // First, look for nested blocks, e.g.:
+  //   <div>
+  //     <div>
+  //     tags for inner block must be indented.
+  //     </div>
+  //   </div>
+  //
+  // The outermost tags must start at the left margin for this to match, and
+  // the inner nested divs must be indented.
+  // We need to do this before the next, more liberal match, because the next
+  // match will start at the first `<div>` and stop at the first `</div>`.
+
+  // attacklab: This regex can be expensive when it fails.
+  /*
+   var text = text.replace(/
+   (						// save in $1
+   ^					// start of line  (with /m)
+   <($block_tags_a)	// start tag = $2
+   \b					// word break
+   // attacklab: hack around khtml/pcre bug...
+   [^\r]*?\n			// any number of lines, minimally matching
+   </\2>				// the matching end tag
+   [ \t]*				// trailing spaces/tabs
+   (?=\n+)				// followed by a newline
+   )						// attacklab: there are sentinel newlines at end of document
+   /gm,function(){...}};
+   */
+  text = text.replace(/^(<(p|div|h[1-6]|blockquote|pre|table|dl|ol|ul|script|noscript|form|fieldset|iframe|math|ins|del)\b[^\r]*?\n<\/\2>[ \t]*(?=\n+))/gm,
+                      showdown.subParser('hashElement')(text, options, globals));
+
+  //
+  // Now match more liberally, simply from `\n<tag>` to `</tag>\n`
+  //
+
+  /*
+   var text = text.replace(/
+   (						// save in $1
+   ^					// start of line  (with /m)
+   <($block_tags_b)	// start tag = $2
+   \b					// word break
+   // attacklab: hack around khtml/pcre bug...
+   [^\r]*?				// any number of lines, minimally matching
+   </\2>				// the matching end tag
+   [ \t]*				// trailing spaces/tabs
+   (?=\n+)				// followed by a newline
+   )						// attacklab: there are sentinel newlines at end of document
+   /gm,function(){...}};
+   */
+  text = text.replace(/^(<(p|div|h[1-6]|blockquote|pre|table|dl|ol|ul|script|noscript|form|fieldset|iframe|math|style|section|header|footer|nav|article|aside|address|audio|canvas|figure|hgroup|output|video)\b[^\r]*?<\/\2>[ \t]*(?=\n+)\n)/gm,
+                      showdown.subParser('hashElement')(text, options, globals));
+
+  // Special case just for <hr />. It was easier to make a special case than
+  // to make the other regex more complicated.
+
+  /*
+   text = text.replace(/
+   (						// save in $1
+   \n\n				// Starting after a blank line
+   [ ]{0,3}
+   (<(hr)				// start tag = $2
+   \b					// word break
+   ([^<>])*?			//
+   \/?>)				// the matching end tag
+   [ \t]*
+   (?=\n{2,})			// followed by a blank line
+   )
+   /g,showdown.subParser('hashElement')(text, options, globals));
+   */
+  text = text.replace(/(\n[ ]{0,3}(<(hr)\b([^<>])*?\/?>)[ \t]*(?=\n{2,}))/g,
+                      showdown.subParser('hashElement')(text, options, globals));
+
+  // Special case for standalone HTML comments:
+
+  /*
+   text = text.replace(/
+   (						// save in $1
+   \n\n				// Starting after a blank line
+   [ ]{0,3}			// attacklab: g_tab_width - 1
+   <!
+   (--[^\r]*?--\s*)+
+   >
+   [ \t]*
+   (?=\n{2,})			// followed by a blank line
+   )
+   /g,showdown.subParser('hashElement')(text, options, globals));
+   */
+  text = text.replace(/(\n\n[ ]{0,3}<!(--[^\r]*?--\s*)+>[ \t]*(?=\n{2,}))/g,
+                      showdown.subParser('hashElement')(text, options, globals));
+
+  // PHP and ASP-style processor instructions (<?...?> and <%...%>)
+
+  /*
+   text = text.replace(/
+   (?:
+   \n\n				// Starting after a blank line
+   )
+   (						// save in $1
+   [ ]{0,3}			// attacklab: g_tab_width - 1
+   (?:
+   <([?%])			// $2
+   [^\r]*?
+   \2>
+   )
+   [ \t]*
+   (?=\n{2,})			// followed by a blank line
+   )
+   /g,showdown.subParser('hashElement')(text, options, globals));
+   */
+  text = text.replace(/(?:\n\n)([ ]{0,3}(?:<([?%])[^\r]*?\2>)[ \t]*(?=\n{2,}))/g,
+                      showdown.subParser('hashElement')(text, options, globals));
+
+  // attacklab: Undo double lines (see comment at top of this function)
+  text = text.replace(/\n\n/g, '\n');
+  return text;
+
+});
+
+showdown.subParser('headers', function (text, options, globals) {
+  'use strict';
+
+  var prefixHeader = options.prefixHeaderId,
+      headerLevelStart = (isNaN(parseInt(options.headerLevelStart))) ? 1 : parseInt(options.headerLevelStart),
+
+  // Set text-style headers:
+  //	Header 1
+  //	========
+  //
+  //	Header 2
+  //	--------
+  //
+      setextRegexH1 = (options.smoothLivePreview) ? /^(.+)[ \t]*\n={2,}[ \t]*\n+/gm : /^(.+)[ \t]*\n=+[ \t]*\n+/gm,
+      setextRegexH2 = (options.smoothLivePreview) ? /^(.+)[ \t]*\n-{2,}[ \t]*\n+/gm : /^(.+)[ \t]*\n-+[ \t]*\n+/gm;
+
+  text = text.replace(setextRegexH1, function (wholeMatch, m1) {
+
+    var spanGamut = showdown.subParser('spanGamut')(m1, options, globals),
+        hID = (options.noHeaderId) ? '' : ' id="' + headerId(m1) + '"',
+        hLevel = headerLevelStart,
+        hashBlock = '<h' + hLevel + hID + '>' + spanGamut + '</h' + hLevel + '>';
+    return showdown.subParser('hashBlock')(hashBlock, options, globals);
+  });
+
+  text = text.replace(setextRegexH2, function (matchFound, m1) {
+    var spanGamut = showdown.subParser('spanGamut')(m1, options, globals),
+        hID = (options.noHeaderId) ? '' : ' id="' + headerId(m1) + '"',
+        hLevel = headerLevelStart + 1,
+      hashBlock = '<h' + hLevel + hID + '>' + spanGamut + '</h' + hLevel + '>';
+    return showdown.subParser('hashBlock')(hashBlock, options, globals);
+  });
+
+  // atx-style headers:
+  //  # Header 1
+  //  ## Header 2
+  //  ## Header 2 with closing hashes ##
+  //  ...
+  //  ###### Header 6
+  //
+  text = text.replace(/^(#{1,6})[ \t]*(.+?)[ \t]*#*\n+/gm, function (wholeMatch, m1, m2) {
+    var span = showdown.subParser('spanGamut')(m2, options, globals),
+        hID = (options.noHeaderId) ? '' : ' id="' + headerId(m2) + '"',
+        hLevel = headerLevelStart - 1 + m1.length,
+        header = '<h' + hLevel + hID + '>' + span + '</h' + hLevel + '>';
+
+    return showdown.subParser('hashBlock')(header, options, globals);
+  });
+
+  function headerId(m) {
+    var title, escapedId = m.replace(/[^\w]/g, '').toLowerCase();
+
+    if (globals.hashLinkCounts[escapedId]) {
+      title = escapedId + '-' + (globals.hashLinkCounts[escapedId]++);
+    } else {
+      title = escapedId;
+      globals.hashLinkCounts[escapedId] = 1;
+    }
+
+    // Prefix id to prevent causing inadvertent pre-existing style matches.
+    if (prefixHeader === true) {
+      prefixHeader = 'section';
+    }
+
+    if (showdown.helper.isString(prefixHeader)) {
+      return prefixHeader + title;
+    }
+    return title;
+  }
+
+  return text;
+});
+
+/**
+ * Turn Markdown image shortcuts into <img> tags.
+ */
+showdown.subParser('images', function (text, options, globals) {
+  'use strict';
+
+  var inlineRegExp    = /!\[(.*?)]\s?\([ \t]*()<?(\S+?)>?(?: =([*\d]+[A-Za-z%]{0,4})x([*\d]+[A-Za-z%]{0,4}))?[ \t]*(?:(['"])(.*?)\6[ \t]*)?\)/g,
+      referenceRegExp = /!\[(.*?)][ ]?(?:\n[ ]*)?\[(.*?)]()()()()()/g;
+
+  function writeImageTag (wholeMatch, altText, linkId, url, width, height, m5, title) {
+
+    var gUrls   = globals.gUrls,
+        gTitles = globals.gTitles,
+        gDims   = globals.gDimensions;
+
+    linkId = linkId.toLowerCase();
+
+    if (!title) {
+      title = '';
+    }
+
+    if (url === '' || url === null) {
+      if (linkId === '' || linkId === null) {
+        // lower-case and turn embedded newlines into spaces
+        linkId = altText.toLowerCase().replace(/ ?\n/g, ' ');
+      }
+      url = '#' + linkId;
+
+      if (!showdown.helper.isUndefined(gUrls[linkId])) {
+        url = gUrls[linkId];
+        if (!showdown.helper.isUndefined(gTitles[linkId])) {
+          title = gTitles[linkId];
+        }
+        if (!showdown.helper.isUndefined(gDims[linkId])) {
+          width = gDims[linkId].width;
+          height = gDims[linkId].height;
+        }
+      } else {
+        return wholeMatch;
+      }
+    }
+
+    altText = altText.replace(/"/g, '&quot;');
+    altText = showdown.helper.escapeCharacters(altText, '*_', false);
+    url = showdown.helper.escapeCharacters(url, '*_', false);
+    var result = '<img src="' + url + '" alt="' + altText + '"';
+
+    if (title) {
+      title = title.replace(/"/g, '&quot;');
+      title = showdown.helper.escapeCharacters(title, '*_', false);
+      result += ' title="' + title + '"';
+    }
+
+    if (width && height) {
+      width  = (width === '*') ? 'auto' : width;
+      height = (height === '*') ? 'auto' : height;
+
+      result += ' width="' + width + '"';
+      result += ' height="' + height + '"';
+    }
+
+    result += ' />';
+
+    return result;
+  }
+
+  // First, handle reference-style labeled images: ![alt text][id]
+  text = text.replace(referenceRegExp, writeImageTag);
+
+  // Next, handle inline images:  ![alt text](url =<width>x<height> "optional title")
+  text = text.replace(inlineRegExp, writeImageTag);
+
+  return text;
+});
+
+showdown.subParser('italicsAndBold', function (text, options) {
+  'use strict';
+
+  if (options.literalMidWordUnderscores) {
+    //underscores
+    // Since we are consuming a \s character, we need to add it
+    text = text.replace(/(^|\s|>|\b)__(?=\S)([^]+?)__(?=\b|<|\s|$)/gm, '$1<strong>$2</strong>');
+    text = text.replace(/(^|\s|>|\b)_(?=\S)([^]+?)_(?=\b|<|\s|$)/gm, '$1<em>$2</em>');
+    //asterisks
+    text = text.replace(/\*\*(?=\S)([^]+?)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/\*(?=\S)([^]+?)\*/g, '<em>$1</em>');
+
+  } else {
+    // <strong> must go first:
+    text = text.replace(/(\*\*|__)(?=\S)([^\r]*?\S[*_]*)\1/g, '<strong>$2</strong>');
+    text = text.replace(/(\*|_)(?=\S)([^\r]*?\S)\1/g, '<em>$2</em>');
+  }
+  return text;
+});
+
+/**
+ * Form HTML ordered (numbered) and unordered (bulleted) lists.
+ */
+showdown.subParser('lists', function (text, options, globals) {
+  'use strict';
+
+  /**
+   * Process the contents of a single ordered or unordered list, splitting it
+   * into individual list items.
+   * @param {string} listStr
+   * @param {boolean} trimTrailing
+   * @returns {string}
+   */
+  function processListItems (listStr, trimTrailing) {
+    // The $g_list_level global keeps track of when we're inside a list.
+    // Each time we enter a list, we increment it; when we leave a list,
+    // we decrement. If it's zero, we're not in a list anymore.
+    //
+    // We do this because when we're not inside a list, we want to treat
+    // something like this:
+    //
+    //    I recommend upgrading to version
+    //    8. Oops, now this line is treated
+    //    as a sub-list.
+    //
+    // As a single paragraph, despite the fact that the second line starts
+    // with a digit-period-space sequence.
+    //
+    // Whereas when we're inside a list (or sub-list), that line will be
+    // treated as the start of a sub-list. What a kludge, huh? This is
+    // an aspect of Markdown's syntax that's hard to parse perfectly
+    // without resorting to mind-reading. Perhaps the solution is to
+    // change the syntax rules such that sub-lists must start with a
+    // starting cardinal number; e.g. "1." or "a.".
+    globals.gListLevel++;
+
+    // trim trailing blank lines:
+    listStr = listStr.replace(/\n{2,}$/, '\n');
+
+    // attacklab: add sentinel to emulate \z
+    listStr += '~0';
+
+    var rgx = /(\n)?(^[ \t]*)([*+-]|\d+[.])[ \t]+((\[(x| )?])?[ \t]*[^\r]+?(\n{1,2}))(?=\n*(~0|\2([*+-]|\d+[.])[ \t]+))/gm,
+        isParagraphed = (/\n[ \t]*\n(?!~0)/.test(listStr));
+
+    listStr = listStr.replace(rgx, function (wholeMatch, m1, m2, m3, m4, taskbtn, checked) {
+      checked = (checked && checked.trim() !== '');
+      var item = showdown.subParser('outdent')(m4, options, globals),
+          bulletStyle = '';
+
+      // Support for github tasklists
+      if (taskbtn && options.tasklists) {
+        bulletStyle = ' class="task-list-item" style="list-style-type: none;"';
+        item = item.replace(/^[ \t]*\[(x| )?]/m, function () {
+          var otp = '<input type="checkbox" disabled style="margin: 0px 0.35em 0.25em -1.6em; vertical-align: middle;"';
+          if (checked) {
+            otp += ' checked';
+          }
+          otp += '>';
+          return otp;
+        });
+      }
+      // m1 - Leading line or
+      // Has a double return (multi paragraph) or
+      // Has sublist
+      if (m1 || (item.search(/\n{2,}/) > -1)) {
+        item = showdown.subParser('githubCodeBlocks')(item, options, globals);
+        item = showdown.subParser('blockGamut')(item, options, globals);
+      } else {
+        // Recursion for sub-lists:
+        item = showdown.subParser('lists')(item, options, globals);
+        item = item.replace(/\n$/, ''); // chomp(item)
+        if (isParagraphed) {
+          item = showdown.subParser('paragraphs')(item, options, globals);
+        } else {
+          item = showdown.subParser('spanGamut')(item, options, globals);
+        }
+      }
+      item =  '\n<li' + bulletStyle + '>' + item + '</li>\n';
+      return item;
+    });
+
+    // attacklab: strip sentinel
+    listStr = listStr.replace(/~0/g, '');
+
+    globals.gListLevel--;
+
+    if (trimTrailing) {
+      listStr = listStr.replace(/\s+$/, '');
+    }
+
+    return listStr;
+  }
+
+  /**
+   * Check and parse consecutive lists (better fix for issue #142)
+   * @param {string} list
+   * @param {string} listType
+   * @param {boolean} trimTrailing
+   * @returns {string}
+   */
+  function parseConsecutiveLists(list, listType, trimTrailing) {
+    // check if we caught 2 or more consecutive lists by mistake
+    // we use the counterRgx, meaning if listType is UL we look for UL and vice versa
+    var counterRxg = (listType === 'ul') ? /^ {0,2}\d+\.[ \t]/gm : /^ {0,2}[*+-][ \t]/gm,
+      subLists = [],
+      result = '';
+
+    if (list.search(counterRxg) !== -1) {
+      (function parseCL(txt) {
+        var pos = txt.search(counterRxg);
+        if (pos !== -1) {
+          // slice
+          result += '\n\n<' + listType + '>' + processListItems(txt.slice(0, pos), !!trimTrailing) + '</' + listType + '>\n\n';
+
+          // invert counterType and listType
+          listType = (listType === 'ul') ? 'ol' : 'ul';
+          counterRxg = (listType === 'ul') ? /^ {0,2}\d+\.[ \t]/gm : /^ {0,2}[*+-][ \t]/gm;
+
+          //recurse
+          parseCL(txt.slice(pos));
+        } else {
+          result += '\n\n<' + listType + '>' + processListItems(txt, !!trimTrailing) + '</' + listType + '>\n\n';
+        }
+      })(list);
+      for (var i = 0; i < subLists.length; ++i) {
+
+      }
+    } else {
+      result = '\n\n<' + listType + '>' + processListItems(list, !!trimTrailing) + '</' + listType + '>\n\n';
+    }
+
+    return result;
+  }
+
+  // attacklab: add sentinel to hack around khtml/safari bug:
+  // http://bugs.webkit.org/show_bug.cgi?id=11231
+  text += '~0';
+
+  // Re-usable pattern to match any entire ul or ol list:
+  var wholeList = /^(([ ]{0,3}([*+-]|\d+[.])[ \t]+)[^\r]+?(~0|\n{2,}(?=\S)(?![ \t]*(?:[*+-]|\d+[.])[ \t]+)))/gm;
+
+  if (globals.gListLevel) {
+    text = text.replace(wholeList, function (wholeMatch, list, m2) {
+      var listType = (m2.search(/[*+-]/g) > -1) ? 'ul' : 'ol';
+      return parseConsecutiveLists(list, listType, true);
+    });
+  } else {
+    wholeList = /(\n\n|^\n?)(([ ]{0,3}([*+-]|\d+[.])[ \t]+)[^\r]+?(~0|\n{2,}(?=\S)(?![ \t]*(?:[*+-]|\d+[.])[ \t]+)))/gm;
+    //wholeList = /(\n\n|^\n?)( {0,3}([*+-]|\d+\.)[ \t]+[\s\S]+?)(?=(~0)|(\n\n(?!\t| {2,}| {0,3}([*+-]|\d+\.)[ \t])))/g;
+    text = text.replace(wholeList, function (wholeMatch, m1, list, m3) {
+
+      var listType = (m3.search(/[*+-]/g) > -1) ? 'ul' : 'ol';
+      return parseConsecutiveLists(list, listType);
+    });
+  }
+
+  // attacklab: strip sentinel
+  text = text.replace(/~0/, '');
+
+  return text;
+});
+
+/**
+ * Remove one level of line-leading tabs or spaces
+ */
+showdown.subParser('outdent', function (text) {
+  'use strict';
+
+  // attacklab: hack around Konqueror 3.5.4 bug:
+  // "----------bug".replace(/^-/g,"") == "bug"
+  text = text.replace(/^(\t|[ ]{1,4})/gm, '~0'); // attacklab: g_tab_width
+
+  // attacklab: clean up hack
+  text = text.replace(/~0/g, '');
+
+  return text;
+});
+
+/**
+ *
+ */
+showdown.subParser('paragraphs', function (text, options, globals) {
+  'use strict';
+
+  // Strip leading and trailing lines:
+  text = text.replace(/^\n+/g, '');
+  text = text.replace(/\n+$/g, '');
+
+  var grafs = text.split(/\n{2,}/g),
+      grafsOut = [],
+      end = grafs.length; // Wrap <p> tags
+
+  for (var i = 0; i < end; i++) {
+    var str = grafs[i];
+
+    // if this is an HTML marker, copy it
+    if (str.search(/~K(\d+)K/g) >= 0) {
+      grafsOut.push(str);
+    } else if (str.search(/\S/) >= 0) {
+      str = showdown.subParser('spanGamut')(str, options, globals);
+      str = str.replace(/^([ \t]*)/g, '<p>');
+      str += '</p>';
+      grafsOut.push(str);
+    }
+  }
+
+  /** Unhashify HTML blocks */
+  end = grafsOut.length;
+  for (i = 0; i < end; i++) {
+    // if this is a marker for an html block...
+    while (grafsOut[i].search(/~K(\d+)K/) >= 0) {
+      var blockText = globals.gHtmlBlocks[RegExp.$1];
+      blockText = blockText.replace(/\$/g, '$$$$'); // Escape any dollar signs
+      grafsOut[i] = grafsOut[i].replace(/~K\d+K/, blockText);
+    }
+  }
+
+  return grafsOut.join('\n\n');
+});
+
+/**
+ * Run extension
+ */
+showdown.subParser('runExtension', function (ext, text, options, globals) {
+  'use strict';
+
+  if (ext.filter) {
+    text = ext.filter(text, globals.converter, options);
+
+  } else if (ext.regex) {
+    // TODO remove this when old extension loading mechanism is deprecated
+    var re = ext.regex;
+    if (!re instanceof RegExp) {
+      re = new RegExp(re, 'g');
+    }
+    text = text.replace(re, ext.replace);
+  }
+
+  return text;
+});
+
+/**
+ * These are all the transformations that occur *within* block-level
+ * tags like paragraphs, headers, and list items.
+ */
+showdown.subParser('spanGamut', function (text, options, globals) {
+  'use strict';
+
+  text = showdown.subParser('codeSpans')(text, options, globals);
+  text = showdown.subParser('escapeSpecialCharsWithinTagAttributes')(text, options, globals);
+  text = showdown.subParser('encodeBackslashEscapes')(text, options, globals);
+
+  // Process anchor and image tags. Images must come first,
+  // because ![foo][f] looks like an anchor.
+  text = showdown.subParser('images')(text, options, globals);
+  text = showdown.subParser('anchors')(text, options, globals);
+
+  // Make links out of things like `<http://example.com/>`
+  // Must come after _DoAnchors(), because you can use < and >
+  // delimiters in inline links like [this](<url>).
+  text = showdown.subParser('autoLinks')(text, options, globals);
+  text = showdown.subParser('encodeAmpsAndAngles')(text, options, globals);
+  text = showdown.subParser('italicsAndBold')(text, options, globals);
+  text = showdown.subParser('strikethrough')(text, options, globals);
+
+  // Do hard breaks:
+  text = text.replace(/  +\n/g, ' <br />\n');
+
+  return text;
+
+});
+
+showdown.subParser('strikethrough', function (text, options) {
+  'use strict';
+
+  if (options.strikethrough) {
+    text = text.replace(/(?:~T){2}([^~]+)(?:~T){2}/g, '<del>$1</del>');
+  }
+
+  return text;
+});
+
+/**
+ * Strip any lines consisting only of spaces and tabs.
+ * This makes subsequent regexs easier to write, because we can
+ * match consecutive blank lines with /\n+/ instead of something
+ * contorted like /[ \t]*\n+/
+ */
+showdown.subParser('stripBlankLines', function (text) {
+  'use strict';
+  return text.replace(/^[ \t]+$/mg, '');
+});
+
+/**
+ * Strips link definitions from text, stores the URLs and titles in
+ * hash references.
+ * Link defs are in the form: ^[id]: url "optional title"
+ *
+ * ^[ ]{0,3}\[(.+)\]: // id = $1  attacklab: g_tab_width - 1
+ * [ \t]*
+ * \n?                  // maybe *one* newline
+ * [ \t]*
+ * <?(\S+?)>?          // url = $2
+ * [ \t]*
+ * \n?                // maybe one newline
+ * [ \t]*
+ * (?:
+ * (\n*)              // any lines skipped = $3 attacklab: lookbehind removed
+ * ["(]
+ * (.+?)              // title = $4
+ * [")]
+ * [ \t]*
+ * )?                 // title is optional
+ * (?:\n+|$)
+ * /gm,
+ * function(){...});
+ *
+ */
+showdown.subParser('stripLinkDefinitions', function (text, options, globals) {
+  'use strict';
+
+  var regex = /^ {0,3}\[(.+)]:[ \t]*\n?[ \t]*<?(\S+?)>?(?: =([*\d]+[A-Za-z%]{0,4})x([*\d]+[A-Za-z%]{0,4}))?[ \t]*\n?[ \t]*(?:(\n*)["|'(](.+?)["|')][ \t]*)?(?:\n+|(?=~0))/gm;
+
+  // attacklab: sentinel workarounds for lack of \A and \Z, safari\khtml bug
+  text += '~0';
+
+  text = text.replace(regex, function (wholeMatch, linkId, url, width, height, blankLines, title) {
+    linkId = linkId.toLowerCase();
+    globals.gUrls[linkId] = showdown.subParser('encodeAmpsAndAngles')(url);  // Link IDs are case-insensitive
+
+    if (blankLines) {
+      // Oops, found blank lines, so it's not a title.
+      // Put back the parenthetical statement we stole.
+      return blankLines + title;
+
+    } else {
+      if (title) {
+        globals.gTitles[linkId] = title.replace(/"|'/g, '&quot;');
+      }
+      if (options.parseImgDimensions && width && height) {
+        globals.gDimensions[linkId] = {
+          width:  width,
+          height: height
+        };
+      }
+    }
+    // Completely remove the definition from the text
+    return '';
+  });
+
+  // attacklab: strip sentinel
+  text = text.replace(/~0/, '');
+
+  return text;
+});
+
+showdown.subParser('tables', function (text, options, globals) {
+  'use strict';
+
+  var table = function () {
+
+    var tables = {},
+        filter;
+
+    tables.th = function (header, style) {
+      var id = '';
+      header = header.trim();
+      if (header === '') {
+        return '';
+      }
+      if (options.tableHeaderId) {
+        id = ' id="' + header.replace(/ /g, '_').toLowerCase() + '"';
+      }
+      header = showdown.subParser('spanGamut')(header, options, globals);
+      if (!style || style.trim() === '') {
+        style = '';
+      } else {
+        style = ' style="' + style + '"';
+      }
+      return '<th' + id + style + '>' + header + '</th>';
+    };
+
+    tables.td = function (cell, style) {
+      var subText = showdown.subParser('spanGamut')(cell.trim(), options, globals);
+      if (!style || style.trim() === '') {
+        style = '';
+      } else {
+        style = ' style="' + style + '"';
+      }
+      return '<td' + style + '>' + subText + '</td>';
+    };
+
+    tables.ths = function () {
+      var out = '',
+          i = 0,
+          hs = [].slice.apply(arguments[0]),
+          style = [].slice.apply(arguments[1]);
+
+      for (i; i < hs.length; i += 1) {
+        out += tables.th(hs[i], style[i]) + '\n';
+      }
+
+      return out;
+    };
+
+    tables.tds = function () {
+      var out = '',
+          i = 0,
+          ds = [].slice.apply(arguments[0]),
+          style = [].slice.apply(arguments[1]);
+
+      for (i; i < ds.length; i += 1) {
+        out += tables.td(ds[i], style[i]) + '\n';
+      }
+      return out;
+    };
+
+    tables.thead = function () {
+      var out,
+          hs = [].slice.apply(arguments[0]),
+          style = [].slice.apply(arguments[1]);
+
+      out = '<thead>\n';
+      out += '<tr>\n';
+      out += tables.ths.apply(this, [hs, style]);
+      out += '</tr>\n';
+      out += '</thead>\n';
+      return out;
+    };
+
+    tables.tr = function () {
+      var out,
+        cs = [].slice.apply(arguments[0]),
+        style = [].slice.apply(arguments[1]);
+
+      out = '<tr>\n';
+      out += tables.tds.apply(this, [cs, style]);
+      out += '</tr>\n';
+      return out;
+    };
+
+    filter = function (text) {
+      var i = 0,
+        lines = text.split('\n'),
+        line,
+        hs,
+        out = [];
+
+      for (i; i < lines.length; i += 1) {
+        line = lines[i];
+        // looks like a table heading
+        if (line.trim().match(/^[|].*[|]$/)) {
+          line = line.trim();
+
+          var tbl = [],
+              align = lines[i + 1].trim(),
+              styles = [],
+              j = 0;
+
+          if (align.match(/^[|][-=|: ]+[|]$/)) {
+            styles = align.substring(1, align.length - 1).split('|');
+            for (j = 0; j < styles.length; ++j) {
+              styles[j] = styles[j].trim();
+              if (styles[j].match(/^[:][-=| ]+[:]$/)) {
+                styles[j] = 'text-align:center;';
+
+              } else if (styles[j].match(/^[-=| ]+[:]$/)) {
+                styles[j] = 'text-align:right;';
+
+              } else if (styles[j].match(/^[:][-=| ]+$/)) {
+                styles[j] = 'text-align:left;';
+              } else {
+                styles[j] = '';
+              }
+            }
+          }
+          tbl.push('<table>');
+          hs = line.substring(1, line.length - 1).split('|');
+
+          if (styles.length === 0) {
+            for (j = 0; j < hs.length; ++j) {
+              styles.push('text-align:left');
+            }
+          }
+          tbl.push(tables.thead.apply(this, [hs, styles]));
+          line = lines[++i];
+          if (!line.trim().match(/^[|][-=|: ]+[|]$/)) {
+            // not a table rolling back
+            line = lines[--i];
+          } else {
+            line = lines[++i];
+            tbl.push('<tbody>');
+            while (line.trim().match(/^[|].*[|]$/)) {
+              line = line.trim();
+              tbl.push(tables.tr.apply(this, [line.substring(1, line.length - 1).split('|'), styles]));
+              line = lines[++i];
+            }
+            tbl.push('</tbody>');
+            tbl.push('</table>');
+            // we are done with this table and we move along
+            out.push(tbl.join('\n'));
+            continue;
+          }
+        }
+        out.push(line);
+      }
+      return out.join('\n');
+    };
+    return {parse: filter};
+  };
+
+  if (options.tables) {
+    var tableParser = table();
+    return tableParser.parse(text);
+  } else {
+    return text;
+  }
+});
+
+/**
+ * Swap back in all the special characters we've hidden.
+ */
+showdown.subParser('unescapeSpecialChars', function (text) {
+  'use strict';
+
+  text = text.replace(/~E(\d+)E/g, function (wholeMatch, m1) {
+    var charCodeToReplace = parseInt(m1);
+    return String.fromCharCode(charCodeToReplace);
+  });
+  return text;
+});
+
+var root = this;
+
+// CommonJS/nodeJS Loader
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = showdown;
+
+// AMD Loader
+} else if (typeof define === 'function' && define.amd) {
+  define('showdown', function () {
+    'use strict';
+    return showdown;
+  });
+
+// Regular Browser loader
+} else {
+  root.showdown = showdown;
+}
+}).call(this);
+//# sourceMappingURL=showdown.js.map
