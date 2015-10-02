@@ -14,10 +14,10 @@
     "grunt-contrib-uglify": "~0.9.2",
     "grunt-contrib-copy": "^0.8.1",
     "grunt-contrib-watch": "~0.6.1",
-    "grunt-contrib-concat": "^0.4.0",
-    "grunt-autoprefixer": "",
+    "grunt-autoprefixer": "3.0.3",
     "grunt-contrib-cssmin": "",
     "grunt-contrib-connect":"0.11.2",
+    "grunt-contrib-clean": "^0.5.0",
     "bower": "^1.5.2",
     "grunt-bower": "0.20.0",
     "grunt-bower-install": "^1.6.0",
@@ -28,6 +28,9 @@
     "grunt-ngmin": "0.4.1",
     "grunt-usemin": "^2.1.1",
     "grunt-rev": "^0.1.0",
-    "grunt-ngmin": "0.0.3"
+    "grunt-ngmin": "0.0.3",
+    "grunt-concurrent": "^2.0.3",
+    "grunt-contrib-imagemin": "^0.9.4",
+    "grunt-contrib-concat": "^0.5.1"
   }
 }

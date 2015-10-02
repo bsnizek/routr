@@ -19,10 +19,12 @@ config_path = os.path.join(root_path, 'config')
 stram = open(os.path.join(config_path, 'app.yml'), "r")
 cfg = yaml.load(stram)
 
-in_development_mode = cfg.get('DEVELOPMENT')
+try:
+    in_development_mode = cfg.get('DEV').get("dev")
+except:
+    in_development_mode = False
 
 if in_development_mode:
-    print("Booting server in development mode.")
     static_folder = os.path.join(os.path.join(root_path, 'dev'), 'static')
     template_folder = os.path.join(os.path.join(root_path, 'dev'), 'templates')
 else:

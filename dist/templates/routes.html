@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
+<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8"> <![endif]-->
+<!--[if IE 8]>         <html class="no-js lt-ie9"> <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js"> <!--<![endif]-->
+<head>
+
+    <link rel="stylesheet" href="styles/vendor.css">
+    <link rel="stylesheet" href="styles/zitelabapp.css">
+
+</head>
+<body>
+
+<div id="sidebar"></div>
+
+<div id="map"></div>
+<div id="cover-div">
+    <div class="float-left">
+        <a href="http://informal.city" target="_blank">
+            <img src="../static/images/logo.png" title="informal.city copenhagen research gadgets">
+        </a>
+    </div>
+    <div class="float-left" id="qgis-link"><a href="{{qgis_file_url}}"> open all routes in QGis. </a></div>
+    <div style="clear:both"></div>
+</div>
+
+<script src="http://maps.google.com/maps/api/js?v=3&sensor=false"></script>
+
+<script src="scripts/vendor.js"></script>
+
+<!-- inject -->
+
+
+<script src="scripts/scripts.js"></script>
+
+<script>
+
+    var map;
+    var drawnItems;
+    var routes_layer;
+    var bounds;
+
+    $( document ).ready(function() {
+
+        jQuery.get('/routes/data', function (data, status) {
+
+            loadMarkdown("/static/md/routes.md", "#sidebar");
+
+            bounds = data.bounds;
+
+            map = new L.Map('map', {
+                center: new L.LatLng(55.6748381, 12.5912468),
+                zoom: 12});
+
+            routes_layer = new L.geoJson();
+            routes_layer.addTo(map);
+
+            sidebar = loadSidebar(map);
+            loadInformal(map);
+
+            var ggl = new L.Google('ROADMAP', { mapOptions: {styles : getStyles()}});
+            map.addLayer(ggl);
+
+            //  TODO: #2: fruits.pop();
+
+            for (i = 0; i < data.guids.length; i++) {
+                jQuery.get('/route/' + data.guids[i] + '/geojson', function (data, status) {
+                    routes_layer.addData(data);
+                    bounds = routes_layer.getBounds();
+                    map.fitBounds(bounds, { padding:[100, 100]});
+                });
+
+
+            }
+
+        });
+
+    });
+
+
+</script>
+
+</body>
+
+</html>

@@ -31,12 +31,12 @@
   "dependencies": {
     "jquery": null,
     "bootstrap": null,
-    "showdown": "#~1.2.3",
-    "leaflet-dist": "0.7.x",
+    "showdown": "git://github.com/bsnizek/showdown.git#1.2.3.1",
+    "leaflet-dist": "vperron/leaflet-dist",
     "leaflet-sidebar": "#0.1.8",
     "leaflet-easybutton": "CliffCloud/Leaflet.EasyButton",
     "leaflet-draw": "Leaflet/Leaflet.draw",
-    "leaflet-search": "1.8.4",
+    "leaflet-search": "stefanocudini/leaflet-search",
     "leaflet-plugins": "shramov/leaflet-plugins",
     "leaflet.editable":"yohanboniface/Leaflet.Editable"
   },

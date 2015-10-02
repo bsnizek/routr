@@ -37,6 +37,8 @@ class Config(BaseConfig):
 
                 cc = c.get(env, c)
 
+                print(cc)
+
                 for key in cc.keys():
                     if key.isupper():
                         self[key] = cc[key]
