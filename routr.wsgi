@@ -13,8 +13,8 @@ project_home = '/home/ubuntu/routr-trondheim'
 
 logging.basicConfig(stream=sys.stderr)
 
-sys.path.append('src')
 sys.path.insert(0, project_home)
+sys.path.insert(0, project_home + '/src')
 
 from routr.app import app as application
 
