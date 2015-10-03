@@ -20,7 +20,11 @@ For delevoment, you need to have `Python`, `nodeJS`, `npm`, `Grunt`, `Bower` and
   	$ pip install -r requirements.txt
 
   	$ npm install
+  	
+  	$ npm install -g bower
 
   	$ bower install
+  	
+  	$ bower install grunt
 
 In production, informal-routr needs a running `PostgreSQL` with the `PostGIS` extension installed. 

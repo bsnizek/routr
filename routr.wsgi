@@ -12,7 +12,7 @@ logging.basicConfig(stream=sys.stderr)
 project_home = '/home/ubuntu/routr-trondheim'
 if project_home not in sys.path:
     sys.path = [project_home] + sys.path
+    
+from routr.app import app as application
 
-from app import app as application
-
-application.secret_key = 'Add your secret key'
+application.secret_key = 'bwxj1'
