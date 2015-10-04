@@ -19,6 +19,9 @@ class Route(db.Model):
     user_id = db.Column(db.String)
     n_saves = db.Column(db.String)
 
+    # TODO: switch type
+    # n_saves = db.Column(db.Integer)
+
     def __init__(self, user_id):
         """
         :return:
@@ -59,10 +62,10 @@ class Route(db.Model):
 
         if route:
             route.geom = wkt
-            if route.n_saves:
-                route.n_saves = route.n_saves + 1
-            else:
-                route.n_saves = 1
+            # if route.n_saves:
+            #     route.n_saves = route.n_saves + 1
+            # else:
+            #     route.n_saves = 1
             d_b.session.commit()
         else:
             route = Route.create(d_b, user_id)
