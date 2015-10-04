@@ -13,7 +13,7 @@ function loadEditTools(map) {
     });
 
     map.on('editable:vertex:dragend', function (e) {
-        console.log(e.layer._latlngs);
+        //console.log(e.layer._latlngs);
         saveRoute(e.layer._latlngs);
     });
 }
@@ -152,7 +152,7 @@ function saveRoute(polyLine) {
             'polyline': coordinate_sequence,
             'user_id': user_id}),
         success: function (data) {
-            console.log(data);
+            //console.log(data);
         },
         dataType: "json"
     });
