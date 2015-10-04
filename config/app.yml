@@ -1,4 +1,4 @@
-SQLALCHEMY_DATABASE_URI: 'postgresql://sharingcph:sharingcph@127.0.0.1:5432/trondheim'
+SQLALCHEMY_DATABASE_URI: 'postgresql://postgres:postgres@127.0.0.1:5432/trondheim'
 
 LOAD_SITUATION: &load_situation
   lat: 10.393333
@@ -12,7 +12,7 @@ ZOOM_LIMITS: &zoom_limits
 DATA_RETRIEVAL_PWD: "blabla"
 
 QGIS: &qgis
-  server_address: "http://127.0.0.1:5000/data"
+  server_address: "http://trondheim.routr.dk/data"
 
 DEV: &development
   dev: True

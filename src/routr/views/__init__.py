@@ -23,7 +23,7 @@ def index():
 @app.route('/routes')
 def routes():
     return render_template('routes.html',
-                           qgis_file_url="http://127.0.0.1:5000/routes/routes.qgs")
+                           qgis_file_url="http://trondheim.routr.dk/routes/routes.qgs")
 
 @app.route('/routes/routes.qgs')
 def routes_qgis():
@@ -31,7 +31,7 @@ def routes_qgis():
     bounds = Route.get_bounds(app.db)
 
     rt = render_template('routes.qgs',
-                         datasource = 'http://127.0.0.1:5000/data',
+                         datasource = 'http://trondheim.routr.dk/data',
                          xmin = bounds[0],
                          ymin = bounds[1],
                          xmax = bounds[2],
