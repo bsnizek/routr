@@ -42,7 +42,11 @@ html, body, #map {
 }
 
 #sidebar {
-    height:340px;
+    height:370px;
+}
+
+.leaflet-sidebar {
+    height:370px;
 }
 
 .leaflet-clickable {
@@ -63,7 +67,7 @@ html, body, #map {
 
 div#cover-div {
     position:absolute;
-    left:30px;
+    left:10px;
     bottom: 30px;
     z-index:3;
     -webkit-border-radius: 4px;
