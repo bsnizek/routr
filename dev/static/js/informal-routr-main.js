@@ -8,7 +8,7 @@ function loadEditTools(map) {
     map.editTools.startPolyline();
 
     map.on('editable:drawing:click', function (e) {
-        console.log(e.layer._latlngs);
+        //console.log(e.layer._latlngs);
         saveRoute(e.layer._latlngs);
     });
 
