@@ -11,7 +11,6 @@
     <link rel="stylesheet" href="../static/bower_components/leaflet/dist/leaflet.css" />
     <link rel="stylesheet" href="../static/bower_components/leaflet-sidebar/src/L.Control.Sidebar.css" />
     <link rel="stylesheet" href="../static/bower_components/leaflet-easybutton/src/easy-button.css" />
-    <link rel="stylesheet" href="../static/bower_components/leaflet-draw/dist/leaflet.draw.css" />
     <link rel="stylesheet" href="../static/bower_components/leaflet-search/dist/leaflet-search.src.css" />
     <!-- endbower -->
     <!-- endbuild -->
@@ -20,6 +19,8 @@
     <!-- endbuild -->
 
     <link rel="shortcut icon" type="image/x-icon" href="../static/favicon.png" />
+
+    <link rel="import" href="bower_components/google-analytics/google-analytics.html">
 
 </head>
 <body>
@@ -41,7 +42,6 @@
 <script src="../static/bower_components/leaflet/dist/leaflet-src.js"></script>
 <script src="../static/bower_components/leaflet-sidebar/src/L.Control.Sidebar.js"></script>
 <script src="../static/bower_components/leaflet-easybutton/src/easy-button.js"></script>
-<script src="../static/bower_components/leaflet-draw/dist/leaflet.draw-src.js"></script>
 <script src="../static/bower_components/leaflet-search/dist/leaflet-search.src.js"></script>
 <script src="../static/bower_components/leaflet-plugins/control/Distance.js"></script>
 <script src="../static/bower_components/leaflet-plugins/control/Layers.Load.js"></script>
@@ -96,13 +96,15 @@
 
             sidebar = loadSidebar(map);
             loadEditTools(map);
-            addSearch(map);
+//            addSearch(map);
             loadSaveAndClose(map);
             loadInformal(map);
         })
     });
 
 </script>
+
+<google-analytics code="UA-50761305-4"></google-analytics>
 
 </body>
 </html>

@@ -38,7 +38,8 @@
     "leaflet-draw": "Leaflet/Leaflet.draw",
     "leaflet-search": "stefanocudini/leaflet-search",
     "leaflet-plugins": "shramov/leaflet-plugins",
-    "leaflet.editable":"yohanboniface/Leaflet.Editable"
+    "leaflet.editable":"yohanboniface/Leaflet.Editable",
+    "google-analytics":"#0.1.0"
   },
 
   "devDependencies": {

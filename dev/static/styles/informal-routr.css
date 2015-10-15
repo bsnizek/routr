@@ -104,3 +104,18 @@ div#cover-div {
     border-bottom: 1px dashed #111;
     text-decoration: none;
 }
+
+.leaflet-marker-icon {
+    width:5px !important;
+    height:5px !important;
+}
+
+.leaflet-clickable {
+    stroke: red;
+    stroke-opacity: 0.9;
+    stroke-width: 2;
+}
+
+.leaflet-middle-icon {
+    visibility: hidden;
+}

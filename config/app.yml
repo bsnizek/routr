@@ -1,13 +1,13 @@
 SQLALCHEMY_DATABASE_URI: 'postgresql://postgres:postgres@127.0.0.1:5432/trondheim'
 
 LOAD_SITUATION: &load_situation
-  lat: 10.393333
-  lon: 63.429722
-  zoom: 12
+  lat: 10.4008684
+  lon: 63.4186319
+  zoom: 15
 
 ZOOM_LIMITS: &zoom_limits
-  from: 7
-  to: 12
+  from: 11
+  to: 18
 
 DATA_RETRIEVAL_PWD: "blabla"
 
