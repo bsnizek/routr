@@ -7,11 +7,10 @@
 
     <!-- build:css styles/vendor.css -->
     <!-- bower:css -->
-    <link rel="stylesheet" href="../static/bower_components/leaflet-dist/leaflet.css" />
     <link rel="stylesheet" href="../static/bower_components/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="../static/bower_components/leaflet-dist/leaflet.css" />
     <link rel="stylesheet" href="../static/bower_components/leaflet-sidebar/src/L.Control.Sidebar.css" />
-    <link rel="stylesheet" href="../static/bower_components/leaflet-easybutton/src/easy-button.css" />
-    <link rel="stylesheet" href="../static/bower_components/leaflet-search/dist/leaflet-search.src.css" />
+    <link rel="stylesheet" href="../static/bower_components/Leaflet.EasyButton/src/easy-button.css" />
     <!-- endbower -->
     <!-- endbuild -->
     <!-- build:css static/informal-routerc.css -->
@@ -19,8 +18,6 @@
     <!-- endbuild -->
 
     <link rel="shortcut icon" type="image/x-icon" href="../static/favicon.png" />
-
-    <link rel="import" href="bower_components/google-analytics/google-analytics.html">
 
 </head>
 <body>
@@ -38,11 +35,10 @@
 <script src="../static/bower_components/jquery/dist/jquery.js"></script>
 <script src="../static/bower_components/bootstrap/dist/js/bootstrap.js"></script>
 <script src="../static/bower_components/showdown/dist/showdown.js"></script>
-<script src="../static/bower_components/leaflet-dist/leaflet.js"></script>
 <script src="../static/bower_components/leaflet/dist/leaflet-src.js"></script>
+<script src="../static/bower_components/leaflet-dist/leaflet.js"></script>
 <script src="../static/bower_components/leaflet-sidebar/src/L.Control.Sidebar.js"></script>
-<script src="../static/bower_components/leaflet-easybutton/src/easy-button.js"></script>
-<script src="../static/bower_components/leaflet-search/dist/leaflet-search.src.js"></script>
+<script src="../static/bower_components/Leaflet.EasyButton/src/easy-button.js"></script>
 <script src="../static/bower_components/leaflet-plugins/control/Distance.js"></script>
 <script src="../static/bower_components/leaflet-plugins/control/Layers.Load.js"></script>
 <script src="../static/bower_components/leaflet-plugins/control/Permalink.js"></script>
@@ -74,13 +70,16 @@
 <script>
 
     var user_id = '{{ user_id}}';
+    var config_id = '{{config_id}}';
 
     $( document ).ready(function() {
 
-        jQuery.get('/cfg/' + user_id, function(data, status) {
+        jQuery.get('/cfg/' + user_id + '/' + config_id, function(data, status) {
 
-            loadMarkdown("/static/md/info.md", "#sidebar");
-            loadMarkdown("/static/md/thanks.md", "#thank-you");
+            loadMarkdown("/static/md/info-" + config_id +".md", "#sidebar");
+            loadMarkdown("/static/md/thanks-" + config_id + ".md", "#thank-you");
+
+            console.log(data);
 
             var map = new L.Map('map', {
 
@@ -94,17 +93,25 @@
             var ggl = new L.Google('ROADMAP', { mapOptions: {styles : getStyles()}});
             map.addLayer(ggl);
 
+            // add goal source icon
+
+            marker = L.marker([data.config.destination.lng, data.config.destination.lat],
+                    {'icon': L.icon({
+                        'iconUrl':data.config.destination.icon,
+                        'iconSize':[30, 34]
+                    })}).addTo(map);
+
             sidebar = loadSidebar(map);
             loadEditTools(map);
-//            addSearch(map);
             loadSaveAndClose(map);
+//            loadUndoButton(map);
             loadInformal(map);
+//            addCtrlZ(map);
+
         })
     });
 
 </script>
-
-<google-analytics code="UA-50761305-4"></google-analytics>
 
 </body>
 </html>

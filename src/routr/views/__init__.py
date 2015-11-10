@@ -15,9 +15,11 @@ __author__ = 'besn'
 @app.route('/')
 def index():
     user_id = request.args.get('user_id')
+    config_id = request.args.get('config_id')
 
     return render_template('index.html',
-                           user_id = user_id or str(uuid.uuid4())
+                           user_id = user_id or str(uuid.uuid4()),
+                           config_id = config_id
                            )
 
 @app.route('/routes')
@@ -74,7 +76,7 @@ def route_route_guid_geojson(route_guid):
 
 @app.route("/data")
 def data():
-    """Returns all data
+    """Returns all data as a GoeJSON list.
     """
 
     routes = Route.all(app.db)
@@ -104,23 +106,34 @@ def data():
 
     return jsonify(dd)
 
-@app.route("/cfg/<user_id>")
-def cfg(user_id):
+@app.route("/cfg/<user_id>/<config_id>")
+def cfg(user_id, config_id):
 
     route = Route.get_route_by_user_id(db, user_id)
+    routr_config = app.routr_config
+
+    cfg = routr_config.get_config(config_id)
+
+    # import pdb;pdb.set_trace()
 
     j = {
         'config':
             {'center':
                 {
-                    'lat': app.config['LOAD_SITUATION'].get('lat'),
-                    'lng': app.config['LOAD_SITUATION'].get('lon')
+                    'lat': cfg.get("load_location").get('lat'),
+                    'lng': cfg.get("load_location").get('lng')
                 },
-                'zoom': app.config['LOAD_SITUATION'].get('zoom'),
-                'zoom_limits': {'from': app.config['ZOOM_LIMITS'].get('from'),
-                                'to': app.config['ZOOM_LIMITS'].get('to')}
+                'zoom': cfg.get("load_location").get('zoom'),
+                'zoom_limits': {'from': cfg.get("zoom_limits").get('from'),
+                                'to': cfg.get("zoom_limits").get('to')}
             }
     }
+
+    if 'destination' in cfg:
+        j['config']['destination'] = cfg.get("destination")
+
+    if 'origin' in cfg:
+        j['config']['origin'] = cfg.get("origin")
 
     if route:
         coords = route.geo().get('coordinates')

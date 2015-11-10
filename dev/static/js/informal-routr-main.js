@@ -82,6 +82,18 @@ function loadMarkdown(body_location, el) {
     $(el).html(html);
 }
 
+function loadUndoButton(map) {
+
+    var b = L.easyButton('<div class="undo-icon" title="Remove the last point.">&nbsp;</div>',
+        function(btn, map) {
+
+            $("#map").fadeOut("slow");
+            $("#thank-you").fadeIn("slow");
+            map.editTools.stopDrawing();
+
+        }).addTo(map);
+}
+
 function loadInformal(map) {
 
     var b = L.easyButton({
@@ -108,19 +120,6 @@ function loadSaveAndClose(map) {
             map.editTools.stopDrawing();
 
         }).addTo(map);
-
-//                {
-//            id: 'save-and-close-button',
-//            states: [
-//                {
-//                    onClick: function(btn, map) {
-//                        alert("Thank you!");
-//                    },
-//                    icon: '<div class="save-and-close-icon">&nbsp;</div>'
-//                }
-//            ]}).addTo( map );
-
-    //$('.save-and-close-icon').parent().parent().hide();
 }
 
 /**
@@ -192,6 +191,27 @@ function saveRoute(polyLine) {
         dataType: "json"
     });
 }
+
+function addCtrlZ(map) {
+    var Z = 90, latlng, redoBuffer = [],
+        onKeyDown = function (e) {
+            if (e.keyCode == Z) {
+                if (!map.editTools._drawingEditor) return;
+                if (e.shiftKey) {
+                    if (redoBuffer.length) map.editTools._drawingEditor.push(redoBuffer.pop());
+                } else {
+                    latlng = this.editTools._drawingEditor.pop();
+                    if (latlng) redoBuffer.push(latlng);
+                }
+            }
+        };
+    L.DomEvent.addListener(document, 'keydown', onKeyDown, map);
+    map.on('editable:drawing:end', function () {
+        redoBuffer = [];
+    });
+}
+
+
 
 function getStyles() {
     return [

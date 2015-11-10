@@ -33,6 +33,17 @@ html, body, #map {
 
 }
 
+.undo-icon  {
+    display: block;
+    text-indent: -9999px;
+    width: 20px;
+    height: 20px;
+    background: url(../images/undo.svg);
+    background-size: 15px 20px;
+    background-repeat: no-repeat;
+
+}
+
 .float-left {
     float:left;
 }
@@ -41,13 +52,13 @@ html, body, #map {
     background-color: #0D0D15;
 }
 
-#sidebar {
-    height:370px;
-}
+/*#sidebar {*/
+    /*height:370px;*/
+/*}*/
 
-.leaflet-sidebar {
-    height:370px;
-}
+/*.leaflet-sidebar {*/
+    /*height:370px;*/
+/*}*/
 
 .leaflet-clickable {
     stroke: red;
@@ -105,10 +116,10 @@ div#cover-div {
     text-decoration: none;
 }
 
-.leaflet-marker-icon {
-    width:5px !important;
-    height:5px !important;
-}
+/*.leaflet-marker-icon {*/
+    /*width:5px !important;*/
+    /*height:5px !important;*/
+/*}*/
 
 .leaflet-clickable {
     stroke: red;
@@ -118,4 +129,15 @@ div#cover-div {
 
 .leaflet-middle-icon {
     visibility: hidden;
+}
+
+.ntnu-logo  {
+    display: block;
+    text-indent: -9999px;
+    width: 50px;
+    height: 50px;
+    background: url(../images/ntnu.svg);
+    background-size: 50px 50px;
+    background-repeat: no-repeat;
+
 }

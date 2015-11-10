@@ -41,7 +41,6 @@ module.exports = function (grunt) {
             tmp: tmpPath
         },
 
-
         uglify:
         { build: {
             files: {
@@ -53,7 +52,7 @@ module.exports = function (grunt) {
         },
             generated: {
                 files: [
-                { dest: 'dist/static/js/vendor.js', src: [ '.tmp/concat/dist/static/js/vendor.js' ] },
+                    { dest: 'dist/static/js/vendor.js', src: [ '.tmp/concat/dist/static/js/vendor.js' ] },
                     { dest: 'dist/static/js/optimized.js',
                         src: [ '.tmp/concat/static/js/optimized.js' ] } ] } },
 
@@ -77,15 +76,7 @@ module.exports = function (grunt) {
         //    }
         //},
 
-        uglify: {
-            build: {
-                files: {'dist/static/js/optimized.min.js': [
-                    'dev/static/js/informal-routr-main.js',
-                    'dev/static/js/informal-routr-routes.js'
-                ]}
-            }
 
-        },
 
         clean: {
             all: {

@@ -3,6 +3,8 @@ from flask import url_for
 from flask.ext.sqlalchemy import SQLAlchemy
 import jinja2
 import os
+
+from routr.app.routr_config import RoutrConfig
 from routr.helpers import Flask
 
 __author__ = 'besn'
@@ -26,6 +28,7 @@ except:
 
 if in_development_mode:
     static_folder = os.path.join(os.path.join(root_path, 'dev'), 'static')
+    print("STATIC FOLDER: %s" % static_folder)
     template_folder = os.path.join(os.path.join(root_path, 'dev'), 'templates')
 else:
     static_folder = os.path.join(root_path, 'static')
@@ -33,6 +36,9 @@ else:
 
 app = Flask(__name__, static_folder=static_folder, template_folder=template_folder)
 app.config.from_yaml(root_path)
+
+routr_config = RoutrConfig(os.path.join(os.path.join(os.path.join(root_path, 'config'), 'app.config.json')))
+app.routr_config = routr_config
 
 my_loader = jinja2.ChoiceLoader([
     app.jinja_loader,

@@ -1,0 +1,40 @@
+{
+  "data_retrieval_pwd": "dromedar",
+  "qgis": {"server_address": "http://trondheim.routr.dk/data"},
+  "development": true,
+  "configs": ["tt","fr"],
+
+  "tt": {
+    "zoom_limits": {
+      "from":11,
+      "to":18
+    },
+    "load_location": {
+      "lat":10.403202,
+      "lng": 63.416798,
+      "zoom": 15
+    },
+    "destination": {
+      "lat":10.395073,
+      "lng":63.430522,
+      "icon": "static/images/flag.png"
+    }
+  },
+
+  "fr": {
+    "zoom_limits": {
+      "from":11,
+      "to":18
+    },
+    "load_location": {
+      "lat":10.392824,
+      "lng": 63.429058,
+      "zoom": 16
+    },
+   "destination": {
+      "lat":10.395073,
+      "lng":63.430522,
+      "icon": "static/images/flag.png"
+    }
+  }
+}
