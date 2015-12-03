@@ -33,3 +33,7 @@ class RoutrConfig(object):
 
     def get_config(self, id=''):
         return self.configs.get(id)
+
+    def get_first_config(self):
+        import pdb;pdb.set_trace()
+        return self.configs[self.configs.keys[0]]

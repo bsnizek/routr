@@ -1,4 +1,4 @@
-<div class="ntnu-logo"></div>
+<!--<div class="ntnu-logo"></div>-->
 
 ##Welcome
   

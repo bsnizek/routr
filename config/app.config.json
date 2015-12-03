@@ -1,6 +1,6 @@
 {
   "data_retrieval_pwd": "dromedar",
-  "qgis": {"server_address": "http://trondheim.routr.dk/data"},
+  "qgis": {"server_address": "http://127.0.0.1:5000/data"},
   "development": true,
   "configs": ["tt","fr"],
 

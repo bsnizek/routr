@@ -24,16 +24,21 @@ def index():
 
 @app.route('/routes')
 def routes():
+    # qgis_link="http://trondheim.routr.dk/routes/routes.qgs"
+    qgis_link = "http://127.0.0.1:5000/routes/routes.qgs"
     return render_template('routes.html',
-                           qgis_file_url="http://trondheim.routr.dk/routes/routes.qgs")
+                           qgis_file_url=qgis_link)
 
 @app.route('/routes/routes.qgs')
 def routes_qgis():
 
     bounds = Route.get_bounds(app.db)
 
+    # datasource = "http://trondheim.routr.dk/data"
+    datasource = "http://127.0.0.1:5000/data"
+
     rt = render_template('routes.qgs',
-                         datasource = 'http://trondheim.routr.dk/data',
+                         datasource = datasource,
                          xmin = bounds[0],
                          ymin = bounds[1],
                          xmax = bounds[2],
@@ -112,28 +117,29 @@ def cfg(user_id, config_id):
     route = Route.get_route_by_user_id(db, user_id)
     routr_config = app.routr_config
 
-    cfg = routr_config.get_config(config_id)
+    if config_id == 'None':
+        j = {}
+    else:
+        cfg = routr_config.get_config(config_id)
 
-    # import pdb;pdb.set_trace()
+        j = {
+            'config':
+                {'center':
+                    {
+                        'lat': cfg.get("load_location").get('lat'),
+                        'lng': cfg.get("load_location").get('lng')
+                    },
+                    'zoom': cfg.get("load_location").get('zoom'),
+                    'zoom_limits': {'from': cfg.get("zoom_limits").get('from'),
+                                    'to': cfg.get("zoom_limits").get('to')}
+                }
+        }
 
-    j = {
-        'config':
-            {'center':
-                {
-                    'lat': cfg.get("load_location").get('lat'),
-                    'lng': cfg.get("load_location").get('lng')
-                },
-                'zoom': cfg.get("load_location").get('zoom'),
-                'zoom_limits': {'from': cfg.get("zoom_limits").get('from'),
-                                'to': cfg.get("zoom_limits").get('to')}
-            }
-    }
+        if 'destination' in cfg:
+            j['config']['destination'] = cfg.get("destination")
 
-    if 'destination' in cfg:
-        j['config']['destination'] = cfg.get("destination")
-
-    if 'origin' in cfg:
-        j['config']['origin'] = cfg.get("origin")
+        if 'origin' in cfg:
+            j['config']['origin'] = cfg.get("origin")
 
     if route:
         coords = route.geo().get('coordinates')
